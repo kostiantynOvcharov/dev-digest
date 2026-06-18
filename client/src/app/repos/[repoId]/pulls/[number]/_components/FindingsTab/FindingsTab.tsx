@@ -5,8 +5,21 @@ import { Icon, Badge, Button, SectionLabel, EmptyState } from "@devdigest/ui";
 import { RunStatus } from "../RunStatus";
 import { RunHistory } from "../RunHistory/RunHistory";
 import { ReviewRunAccordion } from "../ReviewRunAccordion";
+import { SeverityFilterBar } from "../SeverityFilterBar";
 import { s } from "./styles";
-import type { FindingRecord, ReviewRecord, RunSummary, PrCommit } from "@devdigest/shared";
+import type { FindingRecord, ReviewRecord, RunSummary, PrCommit, Severity } from "@devdigest/shared";
+
+/** Findings grouped by the run that produced them (join ReviewRecord.run_id),
+ *  so the timeline can show per-run severity counts + a hover popover. */
+function buildFindingsByRun(runs: ReviewRecord[]): Map<string, FindingRecord[]> {
+  const map = new Map<string, FindingRecord[]>();
+  for (const r of runs) {
+    if (!r.run_id) continue;
+    const prev = map.get(r.run_id) ?? [];
+    map.set(r.run_id, prev.concat(r.findings));
+  }
+  return map;
+}
 import type { UseMutationResult } from "@tanstack/react-query";
 
 interface FindingsTabProps {
@@ -71,6 +84,16 @@ export function FindingsTab({
     setTarget((p) => ({ runId, n: (p?.n ?? 0) + 1 }));
   }, []);
 
+  // PR-level severity breakdown + click-to-filter, aggregated across all runs.
+  const [severityFilter, setSeverityFilter] = React.useState<Severity | null>(null);
+  const severityCounts = React.useMemo(() => {
+    const acc: Record<Severity, number> = { CRITICAL: 0, WARNING: 0, SUGGESTION: 0 };
+    for (const r of runs) for (const f of r.findings) acc[f.severity] = (acc[f.severity] ?? 0) + 1;
+    return acc;
+  }, [runs]);
+  const totalFindings = severityCounts.CRITICAL + severityCounts.WARNING + severityCounts.SUGGESTION;
+  const findingsByRun = React.useMemo(() => buildFindingsByRun(runs), [runs]);
+
   return (
     <section>
       {liveRunIds.length > 0 && (
@@ -131,6 +154,7 @@ export function FindingsTab({
           <RunHistory
             runs={prRuns ?? []}
             commits={prCommits}
+            findingsByRun={findingsByRun}
             onOpenTrace={handleOpenTrace}
             onGoToReview={handleGoToReview}
             onDelete={handleDelete}
@@ -144,6 +168,13 @@ export function FindingsTab({
       >
         Review runs
       </SectionLabel>
+      {totalFindings > 0 && (
+        <SeverityFilterBar
+          counts={severityCounts}
+          active={severityFilter}
+          onChange={setSeverityFilter}
+        />
+      )}
       {runs.length === 0 ? (
         reviewRunning || liveRunIds.length > 0 ? null : (
           <EmptyState
@@ -162,6 +193,7 @@ export function FindingsTab({
             defaultOpen={i === 0}
             repoFullName={repoFullName}
             headSha={headSha}
+            severityFilter={severityFilter}
             targetRunId={target?.runId ?? null}
             targetNonce={target?.n ?? 0}
           />

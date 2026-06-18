@@ -3,11 +3,13 @@
 "use client";
 
 import React from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueries, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, API_BASE } from "../api";
 import { notify } from "../toast";
 import type {
   FindingActionKind,
+  FindingRecord,
+  PrMeta,
   PrReviewComment,
   ReviewRecord,
   ReviewRunResponse,
@@ -54,6 +56,34 @@ export function usePrReviews(prId: string | null | undefined) {
     queryFn: () => api.get<ReviewRecord[]>(`/pulls/${prId}/reviews`),
     enabled: !!prId,
   });
+}
+
+/**
+ * Findings for every reviewed PR in a list, for the PR-list FINDINGS column.
+ * The list endpoint deliberately omits findings, so we fetch each reviewed PR's
+ * reviews client-side (one query per PR) and flatten to its findings. PRs that
+ * were never reviewed (`score == null`) are skipped — they have none. Keyed
+ * `["reviews", prId]` so it shares cache with the PR detail page both ways.
+ */
+export function usePrFindingsForList(prs: PrMeta[]): Map<string, FindingRecord[]> {
+  const reviewable = prs.filter((p) => p.id != null && p.score != null);
+  const results = useQueries({
+    queries: reviewable.map((p) => ({
+      queryKey: ["reviews", p.id!],
+      queryFn: () => api.get<ReviewRecord[]>(`/pulls/${p.id}/reviews`),
+      staleTime: 30_000,
+    })),
+  });
+  return React.useMemo(() => {
+    const map = new Map<string, FindingRecord[]>();
+    reviewable.forEach((p, i) => {
+      const reviews = results[i]?.data;
+      if (reviews) map.set(p.id!, reviews.flatMap((r) => r.findings));
+    });
+    return map;
+    // results identity changes each render; depend on the data slices instead.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reviewable.map((p) => p.id).join(","), results.map((r) => r.dataUpdatedAt).join(",")]);
 }
 
 /** Delete one run from the PR's run history (+ its trace). */

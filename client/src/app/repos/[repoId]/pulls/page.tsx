@@ -14,6 +14,7 @@ import {
 import { AppShell } from "@/components/app-shell";
 import { RepoNotFound } from "@/components/repo-not-found";
 import { usePulls, useRefreshRepo } from "@/lib/hooks";
+import { usePrFindingsForList } from "@/lib/hooks/reviews";
 import { useActiveRepo, useRepoNotFound } from "@/lib/repo-context";
 import { ApiError } from "@/lib/api";
 import { COLUMN_KEYS, SKELETON_ROWS } from "./constants";
@@ -34,6 +35,9 @@ export default function PullsPage() {
   const repoNotFound = useRepoNotFound(repoId);
   const { data: pulls, isLoading, isError, error, refetch } = usePulls(repoId);
   const refresh = useRefreshRepo();
+  // Findings for the FINDINGS column — fetched client-side per reviewed PR (the
+  // list endpoint omits them), keyed to share cache with the PR detail page.
+  const findingsByPr = usePrFindingsForList(pulls ?? []);
 
   // Default to "needs review" — the most actionable filter on open.
   const status = search.get("status") ?? "needs_review";
@@ -127,7 +131,14 @@ export default function PullsPage() {
             }
           />
         ) : (
-          filtered.map((pr) => <PRRow key={pr.number} pr={pr} repoId={repoId} />)
+          filtered.map((pr) => (
+            <PRRow
+              key={pr.number}
+              pr={pr}
+              repoId={repoId}
+              findings={pr.id ? findingsByPr.get(pr.id) : undefined}
+            />
+          ))
         )}
       </div>
     </AppShell>

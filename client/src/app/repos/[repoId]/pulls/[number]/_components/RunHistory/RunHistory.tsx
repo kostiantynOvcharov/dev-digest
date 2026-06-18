@@ -3,8 +3,11 @@
 import React from "react";
 import { useTranslations } from "next-intl";
 import { Badge, Icon, CircularScore, type IconName } from "@devdigest/ui";
-import type { RunSummary, PrCommit } from "@devdigest/shared";
+import type { RunSummary, PrCommit, FindingRecord } from "@devdigest/shared";
 import { RunCostBadge } from "@/components/RunCostBadge";
+import { HoverPopover } from "@/components/HoverPopover";
+import { SeverityCounts } from "@/components/SeverityCounts";
+import { FindingsHoverCard } from "@/components/FindingsHoverCard";
 
 /**
  * PR timeline — every agent run interleaved with the PR's commits, newest-first
@@ -88,12 +91,16 @@ function tsOf(s: string | null | undefined): number {
 export function RunHistory({
   runs,
   commits = [],
+  findingsByRun,
   onOpenTrace,
   onGoToReview,
   onDelete,
 }: {
   runs: RunSummary[];
   commits?: PrCommit[];
+  /** Findings produced by each run (by run_id) — powers the per-run severity
+   *  counts + hover popover in the timeline. */
+  findingsByRun?: Map<string, FindingRecord[]>;
   /** Open the trace + log drawer for a run (the logs icon). */
   onOpenTrace: (runId: string) => void;
   /** Jump to this run's inline review accordion below (clicking the agent name). */
@@ -150,6 +157,7 @@ export function RunHistory({
         const r = item.run;
         const o = outcomeOf(r);
         const settled = r.status === "done";
+        const runFindings = (r.run_id ? findingsByRun?.get(r.run_id) : undefined) ?? [];
         return (
           <div key={`run:${r.run_id}`} style={rowStyle}>
             <Badge color={o.color} bg={o.bg} icon={o.icon}>
@@ -190,9 +198,29 @@ export function RunHistory({
                 </div>
               )}
               {settled && (
-                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                  {t("runStatus.findings", { count: r.findings_count ?? 0 })}
-                  {(r.blockers ?? 0) > 0 ? t("runStatus.blockers", { count: r.blockers ?? 0 }) : ""}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--text-muted)" }}>
+                  {runFindings.length > 0 ? (
+                    <>
+                      <HoverPopover
+                        content={
+                          <FindingsHoverCard
+                            findings={runFindings}
+                            title={`${runFindings.length} FINDINGS IN THIS RUN`}
+                          />
+                        }
+                      >
+                        <SeverityCounts findings={runFindings} />
+                      </HoverPopover>
+                      {(r.blockers ?? 0) > 0 && (
+                        <span>{t("runStatus.blockers", { count: r.blockers ?? 0 })}</span>
+                      )}
+                    </>
+                  ) : (
+                    <span>
+                      {t("runStatus.findings", { count: r.findings_count ?? 0 })}
+                      {(r.blockers ?? 0) > 0 ? t("runStatus.blockers", { count: r.blockers ?? 0 }) : ""}
+                    </span>
+                  )}
                 </div>
               )}
             </div>
