@@ -6,12 +6,24 @@ import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Icon, Avatar, Badge, CircularScore } from "@devdigest/ui";
 import type { PrMeta } from "@/lib/types";
+import type { FindingRecord } from "@devdigest/shared";
 import { RunCostBadge } from "@/components/RunCostBadge";
+import { HoverPopover } from "@/components/HoverPopover";
+import { SeverityCounts } from "@/components/SeverityCounts";
+import { FindingsHoverCard } from "@/components/FindingsHoverCard";
 import { SIZE_COLOR, STATUS_META } from "../../constants";
 import { relativeTime, sizeOf } from "../../helpers";
 import { s } from "../../styles";
 
-export function PRRow({ pr, repoId }: { pr: PrMeta; repoId: string }) {
+export function PRRow({
+  pr,
+  repoId,
+  findings,
+}: {
+  pr: PrMeta;
+  repoId: string;
+  findings?: FindingRecord[];
+}) {
   const t = useTranslations("prReview");
   const router = useRouter();
   const [h, setH] = React.useState(false);
@@ -50,6 +62,18 @@ export function PRRow({ pr, repoId }: { pr: PrMeta; repoId: string }) {
       <div style={s.scoreCell}>
         {reviewed ? (
           <CircularScore score={pr.score!} size={34} stroke={3} />
+        ) : (
+          <span style={s.muted}>—</span>
+        )}
+      </div>
+      <div
+        style={s.findingsCell}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {findings && findings.length > 0 ? (
+          <HoverPopover content={<FindingsHoverCard findings={findings} />}>
+            <SeverityCounts findings={findings} />
+          </HoverPopover>
         ) : (
           <span style={s.muted}>—</span>
         )}

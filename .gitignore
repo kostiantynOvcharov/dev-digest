@@ -20,6 +20,9 @@ coverage/
 clones/
 playwright-report/
 test-results/
+client/pnpm-workspace.yaml
+dev-digest.iml
+server/pnpm-workspace.yaml
 
 # emdash worktree config (local)
 .emdash.json
