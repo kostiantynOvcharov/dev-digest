@@ -2,7 +2,8 @@
 
 ## Iron rule
 No I/O — no DB, fs, GitHub, or persistence. Only the injected `LLMProvider`. The same code
-runs in the studio (server) and in CI. Keep it pure.
+runs in the studio (server) and in CI. Keep it pure. Machine-enforced: `npm run arch:check`
+(dependency-cruiser); this is the pure core of the Onion Architecture — see the `onion-architecture` skill.
 
 ## Before answering
 Search `reviewer-core/docs/`, `reviewer-core/specs/`, `reviewer-core/INSIGHTS.md` first.

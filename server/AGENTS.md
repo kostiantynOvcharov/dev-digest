@@ -10,6 +10,11 @@ Search `server/docs/`, `server/specs/`, `server/INSIGHTS.md` for the topic befor
 - Context enrichment is best-effort: on error/unindexed, omit the section, don't throw.
 - New feature = new module + one line in `src/modules/index.ts`; new columns = your own migration only.
 
+## Architecture
+- Layering = Onion Architecture (routes → service → repository → db; pure core in `vendor/shared`
+  + reviewer-core). Use the `onion-architecture` skill before adding/changing a module. Boundaries
+  are machine-enforced: `pnpm arch:check` (dependency-cruiser, `.dependency-cruiser.cjs`) — keep at 0 errors.
+
 ## Use when
 - Overview, commands, route/API map → read `server/README.md`
 - Indexer internals → read `server/src/modules/repo-intel/README.md`
