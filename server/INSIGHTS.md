@@ -6,7 +6,11 @@ so the next agent/session doesn't relearn it. Append-only — see the
 
 ## What Works
 
+- **2026-06-27** — To assert that a prompt section (skills/memory/etc.) actually lands in a review, drive a real run through `MockLLMProvider` and read it back from the trace rather than unit-testing the assembler: `POST /pulls/:id/review` → `waitForPrRuns(db, prId, { expected: 1 })` → `GET /runs/:runId/trace` → `prompt_assembly.skills`. Set the agent's `repo_intel:false` so context enrichment is skipped and the assertion is stable. Evidence: `server/test/skills.it.test.ts`.
+
 ## What Doesn't Work
+
+- **2026-06-27** — Dependency installs MUST use pnpm, not npm. `npm install <pkg>` fails on this repo: first `ERESOLVE` (pre-existing peer-dep conflict), then even `--legacy-peer-deps` dies with `Cannot read properties of null (reading 'matches')`. `pnpm add <pkg>` works cleanly (a `pnpm-lock.yaml` is the real lockfile; the `npm run …` strings in older notes refer to scripts, not installs). Evidence: `server/pnpm-lock.yaml`, `README.md` (pnpm dev).
 
 ## Codebase Patterns
 
@@ -15,10 +19,13 @@ so the next agent/session doesn't relearn it. Append-only — see the
 - **2026-06-14** — `completeAgentRun`'s `values` shape is declared in TWO places that must match: the repo fn (`repository/run.repo.ts`) AND the interface wrapper (`repository.ts:151`). Adding a field (e.g. `costUsd`) needs both or typecheck fails.
 - **2026-06-27** — The backend is MIXED-architecture, not uniformly onion. `agents`/`repos`/`reviews`/`repo-intel` are fully layered (routes→service→repository); `settings`/`pulls`/`polling`/`workspace` are THIN — their `routes.ts` query Drizzle inline (no service/repo). Thin modules are grandfathered as warn-level in `arch:check` (`route-direct-db-legacy`); do NOT copy them — new modules must be layered. Evidence: `server/src/modules/{settings,pulls,polling,workspace}/routes.ts` vs `modules/agents/`.
 - **2026-06-27** — `platform/container.ts` is the composition root and is deliberately the ONLY place allowed to import across all layers (adapters + sibling-module repos + module services). No `dependency-cruiser` rule uses `^src/platform` as a `from`, so this is by design — don't "fix" it, and don't copy the pattern into a module. Evidence: `server/.dependency-cruiser.cjs`, `server/src/platform/container.ts:26-31`.
+- **2026-06-27** — The "skills" feature is pre-scaffolded everywhere EXCEPT one server wire: tables (`skills`/`skill_versions`/`agent_skills`) + contracts + `agents` link routes/repo + `reviewer-core` `assemblePrompt` (`## Skills / rules` block + `prompt_assembly.skills` trace slot) all already exist. `ReviewInput.skills?: string[]` is plumbed through `reviewPullRequest` but the server NEVER populates it — the single missing injection point is `runOneAgent`, just before the `reviewPullRequest(...)` call. Resolve via `agentsRepo.linkedSkills(agentId)` (already ordered by `order`), filter `skill.enabled` (global master switch), map to bodies. Evidence: `server/src/modules/reviews/run-executor.ts:191`.
+- **2026-06-27** — The skills Stats tab needs "agents using this skill" (`GET /skills/:id/agents → Agent[]`). Do NOT reach for `agents/helpers.ts` `toAgentDto` from the skills module — a module→module import trips `arch:check`. Instead do the `agent_skills`→`agents` join inside `SkillsRepository` (a repo reading a sibling TABLE is fine; importing a sibling module's CODE is not) and map rows to `Agent` with a local mapper. Same rule blocked reusing `agents` link-state across modules. Evidence: `server/.dependency-cruiser.cjs`, `server/specs/skills.md` §6.
 
 ## Tool & Library Notes
 
 - **2026-06-14** — New DB columns: edit `db/schema/*.ts`, then `npm run db:generate` (drizzle-kit) auto-generates `00NN_*.sql` (e.g. `0010_solid_baron_zemo.sql` = `ALTER TABLE … ADD COLUMN`). Never hand-write migration SQL; apply with `npm run db:migrate`.
+- **2026-06-27** — Widening a Drizzle `text({ enum: [...] })` column generates NO migration — the DB type stays `text`, the enum list is a TS-only compile-time narrowing. So adding e.g. `'imported_file'` to `skills.source` needs only the schema edit + both vendored `SkillSource` contracts in lock-step; `db:generate` produces nothing. (Contrast a real pg `enum` type, which WOULD need an `ALTER TYPE`.) Evidence: `server/src/db/schema/skills.ts`.
 - **2026-06-27** — Onion layering is machine-enforced: `pnpm arch:check` runs `dependency-cruiser` against `server/.dependency-cruiser.cjs` (also an `arch` job in `.github/workflows/server-unit.yml`). Error-severity rules fail CI; 6 known warns are grandfathered debt (4 thin-module routes + 2 repo-intel service→adapter) — keep errors at 0, don't grow the warns. Config sets `tsPreCompilationDeps: false` ON PURPOSE: counting `import type` edges flags harmless cycles (helpers⇄repository on a row type; container⇄service DI root). `dependency-cruiser` was already a dep (repo-intel indexer) — reused, not added. Evidence: `server/.dependency-cruiser.cjs`.
 
 ## Recurring Errors & Fixes
