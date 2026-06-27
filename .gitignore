@@ -26,3 +26,5 @@ server/pnpm-workspace.yaml
 
 # emdash worktree config (local)
 .emdash.json
+
+/dev-digest.iml
