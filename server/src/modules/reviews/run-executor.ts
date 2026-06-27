@@ -189,8 +189,15 @@ export class ReviewRunExecutor {
       // `order`; `skill.enabled` is the GLOBAL master switch (a disabled skill
       // never reaches the prompt, even when linked). Omitted when empty so the
       // prompt is byte-identical to the no-skills baseline.
+      //
+      // Each body is prefixed with a `### <name>` sub-header (nested under the
+      // section's `## Skills / rules`) so multiple skills are visually delimited
+      // and named — both for the model and in the trace's prompt-assembly view,
+      // where bodies were previously concatenated with no boundary.
       const linkedSkills = await this.agents.linkedSkills(agent.id);
-      const skillBodies = linkedSkills.filter((l) => l.skill.enabled).map((l) => l.skill.body);
+      const skillBodies = linkedSkills
+        .filter((l) => l.skill.enabled)
+        .map((l) => `### ${l.skill.name}\n\n${l.skill.body}`);
       if (skillBodies.length) {
         runLog.info(`skills: ${skillBodies.length} enabled skill(s) attached`);
       }
