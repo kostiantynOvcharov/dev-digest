@@ -14,6 +14,8 @@ so the next agent/session doesn't relearn it. Append-only — see the
 
 ## Tool & Library Notes
 
+- **2026-06-27** — The "iron rule" (no I/O) is now machine-enforced: `npm run arch:check` runs `dependency-cruiser` against `reviewer-core/.dependency-cruiser.cjs` (also a step in `.github/workflows/reviewer-core.yml`). It forbids `drizzle-orm`/`postgres`, `octokit`/`simple-git`, `fastify`, and Node I/O builtins (`fs`/`child_process`/`net`/`http(s)`/`dns`), but ALLOWS `openai` (the LLM transport) and `zod` — that's the concrete meaning of "pure, only the injected LLMProvider". reviewer-core uses npm (not pnpm), so `dependency-cruiser` was added to devDeps + `package-lock.json`. Evidence: `reviewer-core/.dependency-cruiser.cjs`.
+
 ## Recurring Errors & Fixes
 
 ## Session Notes
