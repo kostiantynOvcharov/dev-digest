@@ -1,13 +1,14 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { and, desc, eq, inArray } from 'drizzle-orm';
-import type { PrMeta, PrDetail, GitHubClient, PrReviewComment } from '@devdigest/shared';
+import type { PrMeta, PrDetail, GitHubClient, PrReviewComment, SmartDiff } from '@devdigest/shared';
 import { PrCommentInput } from '@devdigest/shared';
 import * as t from '../../db/schema.js';
 import { getContext } from '../_shared/context.js';
 import { IdParams } from '../_shared/schemas.js';
 import { AppError, NotFoundError } from '../../platform/errors.js';
 import { deriveReviewStatus } from './status.js';
+import { composeSmartDiff } from './smart-diff.js';
 
 /**
  * F1 — pulls module. PR import via Octokit (list + per-PR detail).
@@ -291,6 +292,57 @@ export default async function pullsRoutes(appBase: FastifyInstance) {
       };
     }
   });
+
+  // ---- Smart Diff: reviewer-ordered diff by risk --------------------------
+  // Deterministic composition (NO model call): classify the PR's changed files
+  // into core/wiring/boilerplate and overlay the latest review's finding lines.
+  // The expensive LLM call already happened in the Structured Reviewer; this
+  // route only re-orders existing data, so it works the instant a PR is
+  // imported (overlay is empty until the first Run Review).
+  app.get(
+    '/pulls/:id/smart-diff',
+    { schema: { params: IdParams } },
+    async (req): Promise<SmartDiff> => {
+      const { workspaceId } = await getContext(container, req);
+      const [pr] = await container.db
+        .select()
+        .from(t.pullRequests)
+        .where(
+          and(eq(t.pullRequests.workspaceId, workspaceId), eq(t.pullRequests.id, req.params.id)),
+        );
+      if (!pr) throw new NotFoundError('Pull request not found');
+
+      const files = await container.db
+        .select()
+        .from(t.prFiles)
+        .where(eq(t.prFiles.prId, pr.id));
+
+      // Overlay from the LATEST review only (newest-first, take one). No review
+      // yet → no findings → layout still composes, badges just don't appear.
+      const [latest] = await container.db
+        .select()
+        .from(t.reviews)
+        .where(eq(t.reviews.prId, pr.id))
+        .orderBy(desc(t.reviews.createdAt))
+        .limit(1);
+      const findingRows = latest
+        ? await container.db
+            .select()
+            .from(t.findings)
+            .where(eq(t.findings.reviewId, latest.id))
+        : [];
+
+      return composeSmartDiff(
+        files.map((f) => ({
+          path: f.path,
+          additions: f.additions,
+          deletions: f.deletions,
+          patch: f.patch ?? null,
+        })),
+        findingRows.map((f) => ({ file: f.file, line: f.startLine })),
+      );
+    },
+  );
 
   // ---- Inline review comments (Files changed tab) -------------------------
   // Proxied live to GitHub (no local persistence): GET reflects existing PR

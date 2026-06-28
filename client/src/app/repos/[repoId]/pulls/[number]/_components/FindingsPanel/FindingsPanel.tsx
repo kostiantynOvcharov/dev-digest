@@ -18,6 +18,7 @@ export function FindingsPanel({
   repoFullName,
   headSha,
   severityFilter = null,
+  targetFindingId = null,
 }: {
   findings: FindingRecord[];
   prId: string;
@@ -25,6 +26,8 @@ export function FindingsPanel({
   headSha?: string | null;
   /** When set, only findings of this severity are shown (PR-level filter). */
   severityFilter?: Severity | null;
+  /** Deep-link target: this card opens expanded + scrolls into view. */
+  targetFindingId?: string | null;
 }) {
   const t = useTranslations("prReview");
   const action = useFindingAction();
@@ -69,7 +72,10 @@ export function FindingsPanel({
               key={f.id}
               f={f}
               focused={i === focusIdx}
-              defaultExpanded={i === 0}
+              // With a deep-link target, only that card opens; otherwise the
+              // first card opens as before.
+              defaultExpanded={targetFindingId ? f.id === targetFindingId : i === 0}
+              isTarget={f.id === targetFindingId}
               pending={action.isPending}
               repoFullName={repoFullName}
               headSha={headSha}

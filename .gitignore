@@ -26,3 +26,8 @@ server/pnpm-workspace.yaml
 
 # emdash worktree config (local)
 .emdash.json
+
+/dev-digest.iml
+
+# pr-self-review local verdict (machine-local, do not commit)
+.claude/pr-self-review.json

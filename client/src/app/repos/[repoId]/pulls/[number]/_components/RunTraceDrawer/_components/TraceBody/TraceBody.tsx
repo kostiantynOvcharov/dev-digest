@@ -41,8 +41,8 @@ export function TraceBody({ trace, findings }: { trace: RunTrace; findings: Find
               {trace.specs_read.length === 0 ? (
                 <span style={s.specsNone}>{t("trace.config.none")}</span>
               ) : (
-                trace.specs_read.map((sp, i) => (
-                  <span key={i} className="mono" style={s.spec}>
+                trace.specs_read.map((sp) => (
+                  <span key={sp} className="mono" style={s.spec}>
                     {sp}
                   </span>
                 ))
