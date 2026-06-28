@@ -10,6 +10,8 @@ so the next agent/session doesn't relearn it. Append-only — see the
 
 ## Codebase Patterns
 
+- **2026-06-28** — Injecting a NEW prompt section for server-DERIVED data (the Intent Layer's `## Review intent`): render it TRUSTED (NOT `wrapUntrusted`) and place it EARLY in the user message — right after `task`, before the untrusted PR body — so scope framing primes the model before any author-controlled text; gate it on the optional `PromptParts` field so an absent value yields a byte-identical prompt (same omit-when-empty contract as `callers`/`repoMap`). Crucially, any accompanying scope rule MUST cap the COUNT of out-of-scope findings (e.g. "one signal"), NEVER the SEVERITY — otherwise it contradicts `INJECTION_GUARD`, which forbids ever descoping a real defect. Evidence: `reviewer-core/src/prompt.ts` (`ONE_SIGNAL_RULE`, `renderIntent`, intent section ordering in `assemblePrompt`).
+
 - **2026-06-14** — `reviewPullRequest` already returns `tokensIn`/`tokensOut`/`costUsd` in `ReviewOutcome` — consumers wanting cost should READ it from the outcome, not recompute (zero extra model calls). Cost is accumulated per chunk and goes `null` if ANY chunk lacked a cost (conservative). The OpenRouter provider prefers the real `usage.cost` and falls back to `estimateCost`. Evidence: `reviewer-core/src/review/run.ts:110,184`, `src/llm/openrouter.ts`.
 
 ## Tool & Library Notes
