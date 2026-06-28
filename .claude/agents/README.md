@@ -45,6 +45,50 @@ until green.
 - **Based on:** worktree isolation for parallel agents, the writer≠reviewer separation, and the
   "give the agent a way to verify its work" loop (see sources).
 
+### `test-writer` (model: sonnet)
+Writes unit/integration tests for **existing** code — RTL for the frontend (`client/`), hermetic
+unit + Testcontainers integration for the backend (`server/`, `reviewer-core/`). After writing, it
+runs the suite and does a **sabotage-and-revert** check so each test is proven to fail when the code
+breaks. Writes test files only; never edits the code under test.
+- **Tools:** `Read, Write, Edit, Grep, Glob, Bash, Skill`; `disallowedTools: WebSearch, WebFetch`.
+- **Skills:** `react-testing-library`, `onion-architecture`, `fastify-best-practices`, `zod`,
+  `typescript-expert`.
+- **Based on:** the "give the agent a way to verify its work" loop, plus the documented anti-patterns
+  of AI-generated tests (over-mocking, tautological/observational assertions) countered by the
+  sabotage-and-revert ("watch it fail first") mechanism.
+
+### `arch-reviewer` (model: sonnet)
+**Read-only** architectural reviewer. Reviews the working diff vs `main` (or named files/module) for
+layering, dependency direction, coupling, onion/iron-rule adherence, and frontend structure. Runs the
+machine checks (`arch:check`) and adds the smell analysis the tooling can't catch; returns
+severity-tagged `file:line` findings and a per-zone verdict. Advisory only — never edits.
+- **Tools:** `Read, Grep, Glob, Bash`; `disallowedTools: Write, Edit, WebSearch, WebFetch`.
+- **Skills:** `onion-architecture`, `react-frontend-best-practices`, `typescript-expert`.
+- **Based on:** writer≠reviewer (an independent skeptic), tool-restriction = read-only enforcement,
+  and a concrete architectural-smell checklist grounded in the repo's dependency-cruiser rules.
+
+### `plan-verifier` (model: sonnet)
+**Read-only** requirements-traceability auditor. Given a Development Plan and the implementation, it
+decomposes the plan into atomic requirements and checks each against the code, demanding a concrete
+`file:line` citation before recording PASS and flagging FAIL / PARTIAL / UNTESTABLE-STATIC. It checks
+*completeness against the plan*, not code quality (that's `arch-reviewer` / `pr-self-review`).
+- **Tools:** `Read, Grep, Glob, Bash`; `disallowedTools: Write, Edit, WebSearch, WebFetch`.
+- **Skills:** `onion-architecture` (as a map of where evidence should live, not a quality rubric).
+- **Based on:** evidence-first/verdict-second verification, per-requirement atomic checklists, and a
+  fresh reviewer context separate from the implementer (multi-agent validation suppresses hallucinated
+  "it's done" confidence).
+
+### `doc-writer` (model: sonnet)
+Produces documentation — describes an implemented feature, converts a plan into docs, or turns
+provided material into a structured document with Mermaid diagrams. Classifies with **Diátaxis**,
+grounds every claim in the actual code (quoting signatures/routes/types), flags anything unverifiable,
+and writes the file to the right place. Writes `.md` docs only; never touches source or overwrites an
+append-only `INSIGHTS.md`.
+- **Tools:** `Read, Grep, Glob, Bash, Write, Edit`; `disallowedTools: WebSearch, WebFetch`.
+- **Skills:** `mermaid-diagram`, `onion-architecture`, `react-frontend-best-practices`.
+- **Based on:** code-grounded docs (cite, don't paraphrase), the Diátaxis classification gate, and
+  docs-as-code placement (co-located in the repo, near the code they describe).
+
 ## Design practices applied
 These come from the official Claude Code docs and Anthropic's engineering blogs (sources below):
 
@@ -64,7 +108,12 @@ These come from the official Claude Code docs and Anthropic's engineering blogs 
   typecheck). Architecture/quality review is left to a separate reviewer or the `pr-self-review`
   gate.
 - **A verifiable "done" signal.** Implementers run the package's real test + typecheck commands and
-  report the **verbatim** output, iterating until green — not a self-assessed summary.
+  report the **verbatim** output, iterating until green — not a self-assessed summary. The
+  `test-writer` extends this with **sabotage-and-revert**: a test only counts once it has been shown
+  to fail against deliberately-broken code, which kills tautological/over-mocked tests.
+- **Evidence-first verification.** The `plan-verifier` may never record a PASS without quoting a
+  concrete `file:line`; "no evidence" is a FAIL, and runtime-only requirements are labelled
+  `UNTESTABLE-STATIC` rather than guessed — this is how a verifier avoids hallucinating completeness.
 - **Skills delivered two ways.** Domain skills are pre-injected via the `skills:` frontmatter field
   *and* re-stated as backend/UI routing tables in the body, so the right practices apply regardless
   of run mode. This mirrors how the `pr-self-review` skill routes files to skills.
