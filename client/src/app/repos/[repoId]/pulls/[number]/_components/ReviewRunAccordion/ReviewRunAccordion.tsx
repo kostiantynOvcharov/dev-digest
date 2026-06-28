@@ -32,6 +32,7 @@ export function ReviewRunAccordion({
   severityFilter = null,
   targetRunId = null,
   targetNonce = 0,
+  targetFindingId = null,
 }: {
   review: ReviewRecord;
   prId: string;
@@ -44,6 +45,9 @@ export function ReviewRunAccordion({
    *  (driven from the Timeline: clicking an agent name navigates here). */
   targetRunId?: string | null;
   targetNonce?: number;
+  /** When a finding in THIS run is the deep-link target (Smart Diff badge),
+   *  the accordion opens so the FindingCard can expand + scroll itself. */
+  targetFindingId?: string | null;
 }) {
   const [open, setOpen] = React.useState(defaultOpen);
   const rootRef = React.useRef<HTMLDivElement | null>(null);
@@ -56,6 +60,10 @@ export function ReviewRunAccordion({
   }, [targetRunId, targetNonce, review.run_id]);
   const del = useDeleteReview(prId);
   const findings = review.findings;
+  // Open this run if it owns the deep-linked finding (the card scrolls itself).
+  React.useEffect(() => {
+    if (targetFindingId && findings.some((f) => f.id === targetFindingId)) setOpen(true);
+  }, [targetFindingId, findings]);
   const blockers = findings.filter((f) => f.severity === "CRITICAL" && !f.dismissed_at).length;
   const verdictColor = review.verdict ? VERDICT_COLOR[review.verdict] ?? "var(--text-muted)" : "var(--text-muted)";
 
@@ -156,6 +164,7 @@ export function ReviewRunAccordion({
             repoFullName={repoFullName}
             headSha={headSha}
             severityFilter={severityFilter}
+            targetFindingId={targetFindingId}
           />
         </div>
       )}
