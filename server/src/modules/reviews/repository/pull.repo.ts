@@ -1,8 +1,17 @@
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray, ne } from 'drizzle-orm';
 import type { Db } from '../../../db/client.js';
 import * as t from '../../../db/schema.js';
 import type { Intent } from '@devdigest/shared';
 import type { PullRow } from '../../../db/rows.js';
+
+/** One prior PR (other than the current one) that touched the same file(s). */
+export interface PriorPrRow {
+  id: string;
+  number: number;
+  title: string;
+  openedAt: Date | null;
+  status: string;
+}
 
 // ---- PR lookup (workspace-scoped) -----------------------------------------
 
@@ -31,6 +40,43 @@ export async function getPrFiles(
   prId: string,
 ): Promise<(typeof t.prFiles.$inferSelect)[]> {
   return db.select().from(t.prFiles).where(eq(t.prFiles.prId, prId));
+}
+
+/**
+ * Prior PRs (newest first) in the same repo — other than `excludePrId` — that
+ * touched ANY of `paths`. Powers the Blast Radius "prior PRs touching these
+ * files" section. Distinct over the PR identity so a PR that touched several of
+ * the files appears once; capped at `limit`.
+ */
+export async function priorPrsTouchingFiles(
+  db: Db,
+  workspaceId: string,
+  repoId: string,
+  excludePrId: string,
+  paths: string[],
+  limit = 10,
+): Promise<PriorPrRow[]> {
+  if (paths.length === 0) return [];
+  return db
+    .selectDistinct({
+      id: t.pullRequests.id,
+      number: t.pullRequests.number,
+      title: t.pullRequests.title,
+      openedAt: t.pullRequests.openedAt,
+      status: t.pullRequests.status,
+    })
+    .from(t.pullRequests)
+    .innerJoin(t.prFiles, eq(t.prFiles.prId, t.pullRequests.id))
+    .where(
+      and(
+        eq(t.pullRequests.workspaceId, workspaceId),
+        eq(t.pullRequests.repoId, repoId),
+        ne(t.pullRequests.id, excludePrId),
+        inArray(t.prFiles.path, paths),
+      ),
+    )
+    .orderBy(desc(t.pullRequests.openedAt))
+    .limit(limit);
 }
 
 /**
