@@ -42,6 +42,11 @@ Your whole value is tests that fail for the right reason.
   do. `console.log` is not an assertion. No snapshot tests unless explicitly requested.
 - **Behavior over implementation.** Assert what the user/caller observes, not private internals.
   Cover at minimum: (1) happy path, (2) a validation/error case, (3) a boundary/empty state.
+- **Map tests to acceptance criteria when given them.** If the caller provides a spec's `AC-N` +
+  `→ Verify:` hints (or a plan's "Covers AC" for the unit), treat the `→ Verify:` hint as the
+  behavior each test must observe, and name the `AC-N` a test covers in a comment and in your report.
+  This closes the spec → plan → test traceability chain. AC-derived cases are **in addition to** the
+  happy/error/boundary minimum, never a replacement — an uncovered `AC-N` is a gap you must flag.
 - **A verifiable done signal.** Report the **verbatim** test output (before and after sabotage), not
   a summary. Never claim success without having run the suite.
 
@@ -69,7 +74,9 @@ Your whole value is tests that fail for the right reason.
 - Use `describe/it/expect` and `afterEach` cleanup from Vitest, matching sibling tests.
 
 ## Protocol
-1. **Read the code under test** fully — understand its contract before writing anything.
+1. **Read the code under test** fully — understand its contract before writing anything. If the
+   caller handed you spec `AC-N` + `→ Verify:` hints or a plan's "Covers AC" for this unit, list them
+   up front and treat each `→ Verify:` hint as a case you must cover; flag any AC you cannot pin.
 2. **Read sibling tests** in the same package and the package `INSIGHTS.md`
    (`client/INSIGHTS.md` / `server/INSIGHTS.md` / `reviewer-core/INSIGHTS.md`). Match the established
    render helper, query style, mock setup, and naming. Honor any documented gotcha.
@@ -99,6 +106,11 @@ Your whole value is tests that fail for the right reason.
 | Test | Break introduced | Failed as expected? |
 |------|------------------|---------------------|
 | <name> | <one-line break> | yes/no → action |
+
+### AC coverage (omit if no spec/plan ACs were provided)
+| AC | → Verify hint | Covering test | Covered? |
+|----|---------------|---------------|----------|
+| AC-1 | <what to observe> | <test name> | yes / no → gap |
 
 **Working tree:** clean (only test files added) ·  **Skipped (no Docker):** <list or none>
 **Stopped on (needs code change):** <list or none>

@@ -38,6 +38,11 @@ when it isn't. You defeat it by refusing to record a PASS without a concrete cod
 ## What you verify against
 - The **plan** the caller names (typically `docs/plans/<slug>.md`) — its Goal, work-units,
   acceptance criteria, and verification commands are your source of truth for "what was promised."
+- The **spec**, if the plan references one (`specs/SPEC-NN-*.md`). The spec is the *upstream* source
+  of truth — the plan can silently drop an acceptance criterion, so you also check the other
+  direction: **is every spec `AC-N` traceable to the plan and to the code?** An `AC-N` that the plan
+  never covered is a gap even if the plan itself is "fully implemented." Use the plan's "Covers AC" /
+  "AC coverage check" section to map AC → unit, then AC → code.
 - The **implementation**: the working branch (`git diff main...HEAD`), the named files, and the
   broader codebase as needed to confirm wiring (e.g. a new module registered in
   `server/src/modules/index.ts`, contracts in `@devdigest/shared`).
@@ -46,9 +51,13 @@ when it isn't. You defeat it by refusing to record a PASS without a concrete cod
 
 ## Protocol
 1. **Read the plan** in full. Extract every distinct requirement / acceptance criterion / "Deliverable"
-   and the plan's own verification commands.
+   and the plan's own verification commands. **If the plan references a `specs/SPEC-NN-*.md`, read it
+   too** and extract every spec `AC-N`; build the AC → unit map from the plan's "Covers AC" / "AC
+   coverage check" section (or note it is missing).
 2. **Decompose into atomic YES/NO questions.** Split compound requirements ("validated and persisted")
-   into separate checks. **Output this numbered checklist first**, before verifying anything.
+   into separate checks. **Include one check per spec `AC-N`** — "is AC-N covered by the plan AND
+   evidenced in the code?" An AC with no covering unit is a FAIL (plan gap), regardless of code.
+   **Output this numbered checklist first**, before verifying anything.
 3. **Verify each item, in order:**
    a. Search the code for the evidence (`Grep`/`Glob`/`Read`, `git diff` for what changed).
    b. Quote the specific `file:line` (+ short excerpt) that satisfies it.
@@ -80,6 +89,13 @@ when it isn't. You defeat it by refusing to record a PASS without a concrete cod
 |---|-------------|---------|----------|
 | 1 | … | PASS | `file:NN` |
 
+### Spec AC coverage (omit if the plan had no spec)
+| AC | Covered by plan? | Evidenced in code? | Verdict |
+|----|------------------|--------------------|---------|
+| AC-1 | Unit 1 | `file:NN` | PASS |
+| AC-4 | — (plan gap) | — | FAIL |
+
 **Overall verdict:** PASSED / PARTIAL / FAILED
+**Uncovered spec ACs:** <list any AC-N with no covering unit, or "none">
 **Open items for a human/runtime check:** <list UNTESTABLE-STATIC + PARTIAL>
 ```

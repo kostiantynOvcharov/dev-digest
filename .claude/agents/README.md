@@ -16,10 +16,14 @@ highly structured, source-cited report; confirms scope before researching and ne
 Tools: `Read, Grep, Glob, Bash, WebSearch, WebFetch`. This file is the structural template the two
 agents below follow (frontmatter + **Hard constraints** + numbered protocol).
 
-### `planner` (model: opus)
-Turns a software task into a structured **Development Plan**: decomposed work-units, affected
-modules/files, the exact skills each unit must apply, per-unit verification commands, and a
-parallelization map. Read-only on source; writes **only** the plan file (`docs/plans/<slug>.md`).
+### `implementation-planner` (model: opus)
+Turns an **already-specified** software task into a structured **Implementation Plan**: decomposed
+work-units, affected modules/files, the exact skills each unit must apply, per-unit verification
+commands, and a parallelization map. Before planning it **verifies the given requirements**, asks
+clarifying questions on anything ambiguous, offers **recommendations** for a better approach, and
+asks the caller whether to target **multi-agent** (parallel implementers) or **single-agent**
+execution. It plans the *how*, never the *what* — it does **not** author specifications. Read-only
+on source; writes **only** the plan file (`docs/plans/<slug>.md`).
 - **Tools:** `Read, Grep, Glob, Bash` (read-only), `Write` (plan file only).
 - **Skills (pre-injected):** the full union of the implementer's backend + UI sets —
   `onion-architecture`, `fastify-best-practices`, `drizzle-orm-patterns`, `postgresql-table-design`,
@@ -27,8 +31,8 @@ parallelization map. Read-only on source; writes **only** the plan file (`docs/p
   `react-testing-library`, `zod`, `security`, `typescript-expert`, plus `mermaid-diagram`. It plans
   with every practice the implementer will execute, so the plan is grounded in the same rules.
 - **Based on:** orchestrator-worker decomposition + file-based plan handoff (multi-agent research),
-  the explore→plan→code separation (best practices), and the "expand a small task into a
-  comprehensive spec / sprint contract" pattern (harness design).
+  and the explore→plan→code separation (best practices). Specification authoring is explicitly out
+  of scope — a spec is an input to this agent, not an output.
 
 ### `implementer` (model: sonnet)
 Implements **one** work-unit from a Development Plan (UI or backend) in an isolated git worktree, so
@@ -93,12 +97,13 @@ append-only `INSIGHTS.md`.
 These come from the official Claude Code docs and Anthropic's engineering blogs (sources below):
 
 - **`description` is the routing signal.** Each agent's description leads with when to use it and
-  states explicit negatives ("Do NOT use it to…") so Claude doesn't misfire between planner and
-  implementer.
-- **Tool restriction = single responsibility.** The planner has no general write access (it can't
-  mutate source — only the plan file); the implementer has write tools but no web access and can't
-  plan. The boundary is enforced by tools, not just by instructions.
-- **File-based plan handoff.** The planner writes the Development Plan to a file rather than
+  states explicit negatives ("Do NOT use it to…") so Claude doesn't misfire between
+  implementation-planner and implementer.
+- **Tool restriction = single responsibility.** The implementation-planner has no general write
+  access (it can't mutate source — only the plan file); the implementer has write tools but no web
+  access and can't plan. The boundary is enforced by tools, not just by instructions.
+- **File-based plan handoff.** The implementation-planner writes the Implementation Plan to a file
+  rather than
   returning it as a long string — a plan passed inline can be truncated by the context window; a
   file is durable and re-readable by every implementer.
 - **`isolation: worktree` for parallelism.** Each implementer gets its own git checkout, the
@@ -117,7 +122,7 @@ These come from the official Claude Code docs and Anthropic's engineering blogs 
 - **Skills delivered two ways.** Domain skills are pre-injected via the `skills:` frontmatter field
   *and* re-stated as backend/UI routing tables in the body, so the right practices apply regardless
   of run mode. This mirrors how the `pr-self-review` skill routes files to skills.
-- **Insights at the right place.** The planner embeds relevant `INSIGHTS.md` entries into the plan,
+- **Insights at the right place.** The implementation-planner embeds relevant `INSIGHTS.md` entries into the plan,
   and each implementer also reads its package's `INSIGHTS.md` locally on start — insights live at
   package root (server/client/reviewer-core/e2e), not per-module.
 - **Right-sized fan-out.** Plans target 3–6 work-units and ~3–5 parallel implementers — past that,
@@ -141,6 +146,6 @@ These come from the official Claude Code docs and Anthropic's engineering blogs 
 - [How we built our multi-agent research system](https://www.anthropic.com/engineering/multi-agent-research-system)
   → orchestrator-worker decomposition + file-based plan handoff.
 - [Harness design for long-running app development](https://www.anthropic.com/engineering/harness-design-long-running-apps)
-  → writer≠reviewer (agents over-praise own work) & the sprint-contract / spec-expansion pattern.
+  → writer≠reviewer (agents over-praise own work).
 - [Effective context engineering for AI agents](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents)
   → "right altitude" system prompts, structured prompt bodies.

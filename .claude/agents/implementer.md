@@ -38,7 +38,7 @@ Stay strictly inside your assigned files so you never collide with a sibling imp
 - **One work-unit only. No scope creep.** Touch only the files your work-unit names. Do not
   refactor, rename, or "improve" anything outside it. If a required change falls outside your
   scope (e.g. a shared contract, another module, a migration), **STOP and report it** rather than
-  editing it — that is a cross-unit decision for the planner/orchestrator.
+  editing it — that is a cross-unit decision for the implementation-planner/orchestrator.
 - **Do-not-touch:** never hand-edit `server/src/vendor/shared/` or `server/src/db/migrations/`.
 - **No design self-grading.** Your self-review is limited to *code-writing correctness* — tests +
   typecheck green. You do NOT assess your own architecture or code quality; agents reliably
