@@ -46,4 +46,8 @@ jobs:
 
       - run: npm run typecheck
 
+      # Iron-rule boundary check: reviewer-core must stay pure (no I/O). See
+      # reviewer-core/.dependency-cruiser.cjs and the onion-architecture skill.
+      - run: npm run arch:check
+
       - run: npm test

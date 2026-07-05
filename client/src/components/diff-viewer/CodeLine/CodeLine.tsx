@@ -3,6 +3,8 @@
 "use client";
 
 import React from "react";
+import { SeverityBadge, type Severity } from "@devdigest/ui";
+import type { FindingRecord } from "@devdigest/shared";
 import { commentTargetFor, type CommentThread, type DiffCommentApi, cs } from "../comments";
 import { type Line } from "../helpers";
 import { s, lineRowFor, lineSignFor } from "../styles";
@@ -14,11 +16,16 @@ export function CodeLine({
   path,
   threads,
   commenting,
+  finding,
+  onFindingClick,
 }: {
   ln: Line;
   path: string;
   threads: CommentThread[];
   commenting?: DiffCommentApi;
+  /** Smart Diff: a review finding anchored to this line (renders a badge). */
+  finding?: FindingRecord;
+  onFindingClick?: (findingId: string) => void;
 }) {
   const [hover, setHover] = React.useState(false);
   const [composing, setComposing] = React.useState(false);
@@ -62,6 +69,25 @@ export function CodeLine({
         <span className="mono" style={s.lineText}>
           {ln.text || " "}
         </span>
+        {finding && (
+          <button
+            type="button"
+            title={`${finding.title} — open in Findings`}
+            aria-label={`${finding.severity} finding: ${finding.title}. Open in Findings.`}
+            onClick={() => onFindingClick?.(finding.id)}
+            style={{
+              border: "none",
+              background: "none",
+              padding: "0 8px 0 0",
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              flexShrink: 0,
+            }}
+          >
+            <SeverityBadge severity={finding.severity as Severity} compact />
+          </button>
+        )}
       </div>
 
       {commenting &&

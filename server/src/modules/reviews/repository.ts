@@ -39,6 +39,17 @@ export class ReviewRepository {
     return pullRepo.getPrFiles(this.db, prId);
   }
 
+  /** Prior PRs (newest first) touching any of `paths`, excluding `excludePrId`. */
+  priorPrsTouchingFiles(
+    workspaceId: string,
+    repoId: string,
+    excludePrId: string,
+    paths: string[],
+    limit?: number,
+  ): Promise<pullRepo.PriorPrRow[]> {
+    return pullRepo.priorPrsTouchingFiles(this.db, workspaceId, repoId, excludePrId, paths, limit);
+  }
+
   // ---- reviews + findings -------------------------------------------------
 
   insertReview(values: {

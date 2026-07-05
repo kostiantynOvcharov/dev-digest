@@ -6,6 +6,7 @@ import React from "react";
 import { useTranslations } from "next-intl";
 import { Icon } from "@devdigest/ui";
 import type { PrFile } from "@/lib/types";
+import type { FindingRecord } from "@devdigest/shared";
 import { AUTO_EXPAND_MAX_LINES } from "../constants";
 import { parsePatch, type Line } from "../helpers";
 import {
@@ -30,10 +31,29 @@ function threadsForLine(ln: Line, matched: Map<string, CommentThread[]>): Commen
   return out;
 }
 
-export function FileCard({ file, commenting }: { file: PrFile; commenting?: DiffCommentApi }) {
+export function FileCard({
+  file,
+  commenting,
+  defaultOpen,
+  lineFindings,
+  onFindingClick,
+  headerExtra,
+}: {
+  file: PrFile;
+  commenting?: DiffCommentApi;
+  /** Force initial open/closed; falls back to the size heuristic when omitted
+   *  (Smart Diff uses it to collapse the boilerplate group by default). */
+  defaultOpen?: boolean;
+  /** Smart Diff overlay: findings keyed by NEW line number for this file. */
+  lineFindings?: Map<number, FindingRecord>;
+  /** Click a per-line severity badge → deep-link to that finding. */
+  onFindingClick?: (findingId: string) => void;
+  /** Extra header content (e.g. a file-level "N findings" badge). */
+  headerExtra?: React.ReactNode;
+}) {
   const t = useTranslations("shell");
   const [open, setOpen] = React.useState(
-    (file.additions ?? 0) + (file.deletions ?? 0) <= AUTO_EXPAND_MAX_LINES
+    defaultOpen ?? (file.additions ?? 0) + (file.deletions ?? 0) <= AUTO_EXPAND_MAX_LINES
   );
   const lines = React.useMemo(() => parsePatch(file.patch), [file.patch]);
 
@@ -72,6 +92,7 @@ export function FileCard({ file, commenting }: { file: PrFile; commenting?: Diff
             {commentCount}
           </span>
         )}
+        {headerExtra}
       </div>
       {open && (
         <div style={s.fileBody}>
@@ -85,6 +106,8 @@ export function FileCard({ file, commenting }: { file: PrFile; commenting?: Diff
                 path={file.path}
                 threads={threadsForLine(ln, matched)}
                 commenting={commenting}
+                finding={ln.newNo != null ? lineFindings?.get(ln.newNo) : undefined}
+                onFindingClick={onFindingClick}
               />
             ))
           )}

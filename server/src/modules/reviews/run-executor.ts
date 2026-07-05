@@ -1,5 +1,5 @@
 import type { Container } from '../../platform/container.js';
-import type { Provider, Review, RunTrace, UnifiedDiff } from '@devdigest/shared';
+import type { Intent, Provider, Review, RunTrace, UnifiedDiff } from '@devdigest/shared';
 import { reviewPullRequest, countBlockers } from '@devdigest/reviewer-core';
 import { RunLogger } from '../../platform/run-logger.js';
 import * as schema from '../../db/schema.js';
@@ -105,6 +105,11 @@ export class ReviewRunExecutor {
     }
     runLog.info(`Diff ready — ${diff.files.length} changed file(s); starting ${jobs.length} agent run(s)`);
 
+    // Intent Layer — derived ONCE per PR (not per agent) and fanned out to every
+    // run's Live Log + trace via the shared runLog. Best-effort: a failure here
+    // must never break the review (the prompt stays identical to today's).
+    const intent = await this.buildIntent(workspaceId, pull, runLog);
+
     for (const { agent, runId } of jobs) {
       const agentStart = Date.now();
       logger?.info(
@@ -112,7 +117,7 @@ export class ReviewRunExecutor {
         `review: agent "${agent.name}" started (${agent.provider}/${agent.model})`,
       );
       try {
-        const outcome = await this.runOneAgent(workspaceId, pull, repo, diff, agent, runId, runLog);
+        const outcome = await this.runOneAgent(workspaceId, pull, repo, diff, intent, agent, runId, runLog);
         logger?.info(
           {
             runId,
@@ -141,6 +146,7 @@ export class ReviewRunExecutor {
     pull: PullRow,
     repo: typeof schema.repos.$inferSelect,
     diff: UnifiedDiff,
+    intent: Intent | undefined,
     agent: AgentRow,
     runId: string,
     parentLog: RunLogger,
@@ -184,6 +190,24 @@ export class ReviewRunExecutor {
 
       const task = taskLine(pull) + rankNote;
 
+      // Skills — the agent's linked skill bodies, injected as the prompt's
+      // `## Skills / rules` block. `linkedSkills` is already ordered by the link
+      // `order`; `skill.enabled` is the GLOBAL master switch (a disabled skill
+      // never reaches the prompt, even when linked). Omitted when empty so the
+      // prompt is byte-identical to the no-skills baseline.
+      //
+      // Each body is prefixed with a `### <name>` sub-header (nested under the
+      // section's `## Skills / rules`) so multiple skills are visually delimited
+      // and named — both for the model and in the trace's prompt-assembly view,
+      // where bodies were previously concatenated with no boundary.
+      const linkedSkills = await this.agents.linkedSkills(agent.id);
+      const skillBodies = linkedSkills
+        .filter((l) => l.skill.enabled)
+        .map((l) => `### ${l.skill.name}\n\n${l.skill.body}`);
+      if (skillBodies.length) {
+        runLog.info(`skills: ${skillBodies.length} enabled skill(s) attached`);
+      }
+
       // ---- Engine: assemble → single-pass → grounding -----------------------
       // The pure review pipeline lives in @devdigest/reviewer-core (shared with
       // the CI runner). The service owns only I/O: repo-intel context resolution
@@ -196,6 +220,8 @@ export class ReviewRunExecutor {
         // Per-agent review strategy (configured in the Agent editor); falls back
         // to the studio default. single-pass = whole diff in one call.
         strategy: agent.strategy ?? REVIEW_STRATEGY,
+        // Skills block — omitted when the agent has no enabled, linked skills.
+        ...(skillBodies.length ? { skills: skillBodies } : {}),
         // T1.3 — pass the callers digest only when we built one. assemblePrompt
         // omits the section when this is empty/undefined.
         ...(callersDigest ? { callers: callersDigest } : {}),
@@ -204,6 +230,9 @@ export class ReviewRunExecutor {
         // PR author's description/body — untrusted; assemblePrompt wraps +
         // truncates it. Omitted when the PR has no body.
         ...(pull.body ? { prDescription: pull.body } : {}),
+        // Intent Layer — derived per PR; trusted, rendered as `## Review intent`
+        // with the one-signal scope rule. Omitted when intent derivation failed.
+        ...(intent ? { intent } : {}),
         task,
         sessionId: `${repo.owner}/${repo.name}#${pull.number}:${agent.name}`,
         onEvent: (e) => runLog.event(e.kind, e.msg, e.data),
@@ -328,6 +357,30 @@ export class ReviewRunExecutor {
    * rows per `getCallerSignatures` call) so the section stays under ~600
    * tokens even on heavy PRs.
    */
+  /**
+   * Intent Layer — derive (or reuse) the PR's intent for the `## Review intent`
+   * prompt slot. Best-effort like the other enrichments: a failure (e.g. missing
+   * provider key) is surfaced only as a Live Log line and the review proceeds
+   * with a prompt identical to today's. Recompute is button-only, so an existing
+   * intent is reused rather than regenerated here.
+   */
+  private async buildIntent(
+    workspaceId: string,
+    pull: PullRow,
+    runLog: RunLogger,
+  ): Promise<Intent | undefined> {
+    try {
+      return await runLog.step(
+        'Deriving PR intent',
+        () => this.container.intent.generateIfMissing(workspaceId, pull.id, runLog),
+        { kind: 'tool' },
+      );
+    } catch (err) {
+      runLog.info(`intent: generation failed — ${(err as Error).message}`);
+      return undefined;
+    }
+  }
+
   private async buildCallersDigest(
     repoId: string,
     diff: UnifiedDiff,

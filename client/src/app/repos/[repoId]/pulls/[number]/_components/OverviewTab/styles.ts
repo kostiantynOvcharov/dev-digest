@@ -1,6 +1,14 @@
 import type { CSSProperties } from "react";
 
 export const s = {
+  // Intent + Blast Radius side-by-side (the PR brief), wrapping on narrow widths.
+  brief: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))",
+    gap: 24,
+    alignItems: "start",
+    marginBottom: 24,
+  } satisfies CSSProperties,
   descriptionBox: {
     border: "1px solid var(--border)",
     borderRadius: 8,

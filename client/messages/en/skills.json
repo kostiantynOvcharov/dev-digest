@@ -97,5 +97,92 @@
     "bodyLabel": "Skill body (Markdown)",
     "bodyHint": "Saving a changed body creates a new immutable version.",
     "version": "v{version}"
+  },
+  "card": {
+    "noDescription": "No description",
+    "usage": "{count} agents",
+    "needsVetting": "needs vetting"
+  },
+  "list": {
+    "title": "Skills",
+    "subtitle": "Reusable rule & rubric blocks bound to your review agents.",
+    "addSkill": "Add Skill",
+    "createFromScratch": "Create from scratch",
+    "importFromFile": "Import from file",
+    "searchPlaceholder": "Search skills…",
+    "loadError": "Could not load skills.",
+    "emptyTitle": "No skills yet",
+    "emptyBody": "Create a skill from scratch or import one from a file.",
+    "emptyCta": "Create skill",
+    "selectTitle": "Select a skill",
+    "selectBody": "Pick a skill on the left to view and edit it."
+  },
+  "editor": {
+    "runOnEvals": "Run on evals",
+    "tabs": {
+      "config": "Config",
+      "preview": "Preview",
+      "evals": "Evals",
+      "stats": "Stats",
+      "versions": "Versions"
+    },
+    "config": {
+      "title": "Configuration",
+      "enabled": "Enabled",
+      "name": "Name",
+      "description": "Description",
+      "descriptionHint": "The skill's interface — phrase it as a directive instruction for the agent.",
+      "type": "Type",
+      "body": "Skill body",
+      "bodyHint": "Markdown. Injected verbatim into the agent prompt's “Skills / rules” section.",
+      "tokens": "{count} tokens",
+      "unsaved": "unsaved",
+      "save": "Save",
+      "saving": "Saving…",
+      "saved": "Saved (v{version})",
+      "savedToast": "Saved skill (v{version})"
+    },
+    "preview": {
+      "title": "Preview",
+      "subtitle": "Rendered as the reviewing agent receives it."
+    },
+    "stats": {
+      "usedBy": "Used by",
+      "usedByUnit": "agents",
+      "pullFrequency": "Pull frequency",
+      "acceptRate": "Accept rate",
+      "findings30d": "Findings (30d)",
+      "agentsUsing": "Agents using this skill",
+      "findingsByCategory": "Findings by category",
+      "noAgents": "No agents use this skill yet.",
+      "open": "Open",
+      "placeholder": "—"
+    },
+    "versions": {
+      "title": "Version history",
+      "subtitle": "Every save snapshots the body so eval runs stay reproducible against the exact text they scored.",
+      "count": "{count} versions",
+      "current": "Current",
+      "restore": "Restore",
+      "view": "View",
+      "restored": "Restored to v{version} as v{newVersion}",
+      "empty": "No versions yet."
+    },
+    "evals": {
+      "title": "Evals",
+      "body": "Skill evals arrive in a later lesson."
+    }
+  },
+  "importDrawer": {
+    "pick": "Choose a .md or .zip file",
+    "picking": "Reading file…",
+    "previewTitle": "Extracted skill",
+    "ignoredTitle": "Ignored ({count})",
+    "ignoredHint": "Non-markdown archive entries are stored as data and never executed.",
+    "confirm": "Import skill",
+    "confirming": "Importing…",
+    "cancel": "Cancel",
+    "untrusted": "Imported skills are stored as untrusted data and start disabled — vet the body before enabling.",
+    "parseError": "Could not parse that file."
   }
 }

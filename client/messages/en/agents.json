@@ -91,7 +91,12 @@
     "title": "Skills",
     "enabledCount": "{linked} of {total} enabled",
     "filterPlaceholder": "Filter skills…",
-    "orderHint": "Order matters — earlier skills appear earlier in the assembled prompt. Toggle to attach."
+    "orderHint": "Order matters — earlier skills appear earlier in the assembled prompt. Toggle to attach.",
+    "linkedSection": "Attached (drag to reorder)",
+    "availableSection": "Available",
+    "empty": "No skills yet. Create one on the Skills page.",
+    "globallyDisabled": "globally disabled — not sent",
+    "noResults": "No skills match your filter."
   },
   "mount": {
     "body": "Mount point for {owner}. The Agent Editor shell + tab routing are wired by A2 — {owner} renders this tab."

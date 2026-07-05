@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { Finding, Verdict } from './findings.js';
-import { Intent, SmartDiff } from './brief.js';
+import { Intent, SmartDiff, BlastRadius } from './brief.js';
 
 /**
  * A2 — Review-Core API surface contracts. These extend the core
@@ -63,3 +63,35 @@ export type PrIntentRecord = z.infer<typeof PrIntentRecord>;
 /** Smart-diff response for a PR (the SmartDiff). */
 export const SmartDiffResponse = SmartDiff;
 export type SmartDiffResponse = z.infer<typeof SmartDiffResponse>;
+
+/** A prior PR that touched one of the changed files (blast "prior PRs"). */
+export const BlastPriorPr = z.object({
+  id: z.string(),
+  number: z.number().int(),
+  title: z.string(),
+  opened_at: z.string().nullable(),
+  status: z.string(),
+});
+export type BlastPriorPr = z.infer<typeof BlastPriorPr>;
+
+/**
+ * Blast-radius response for a PR (`GET /pulls/:id/blast`): the impact map
+ * (`BlastRadius`) plus the repo-intel index `status`/`degraded`/`reason` so the
+ * UI can render a partial/degraded badge, top-level `counts` for the stat row,
+ * and `prior_prs` (other PRs that touched the same files). Read straight from
+ * the pre-built repo-intel index + the PR history — no model call.
+ * `status: 'none'` means there's no usable index (→ empty state).
+ */
+export const BlastRadiusResponse = BlastRadius.extend({
+  status: z.enum(['full', 'partial', 'degraded', 'failed', 'none']),
+  degraded: z.boolean(),
+  reason: z.string().nullable(),
+  counts: z.object({
+    symbols: z.number().int(),
+    callers: z.number().int(),
+    endpoints: z.number().int(),
+    crons: z.number().int(),
+  }),
+  prior_prs: z.array(BlastPriorPr),
+});
+export type BlastRadiusResponse = z.infer<typeof BlastRadiusResponse>;

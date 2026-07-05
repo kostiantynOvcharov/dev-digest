@@ -10,6 +10,9 @@
     "runExtraction": "Run extraction",
     "extractionFailed": "Extraction failed",
     "loadError": "Could not load conventions.",
+    "retry": "Retry",
+    "createSkill": "Create skill",
+    "createSkillHint": "Accept at least one convention to merge them into a Skill.",
     "empty": {
       "title": "No conventions extracted yet",
       "body": "Scan the repo to surface house-rules — naming, error handling, structure — each backed by evidence you can turn into a Skill.",
@@ -19,8 +22,34 @@
   },
   "card": {
     "confidence": "Confidence",
+    "accept": "Accept",
+    "reject": "Reject",
     "accepted": "Accepted",
+    "rejected": "Rejected",
     "accepting": "Accepting…",
-    "acceptAsSkill": "Accept as Skill"
+    "acceptAsSkill": "Accept as Skill",
+    "uncategorized": "uncategorized",
+    "editRule": "Edit rule",
+    "save": "Save",
+    "cancel": "Cancel",
+    "viewSource": "View source"
+  },
+  "modal": {
+    "title": "Create skill from conventions",
+    "subtitle": "Merge the accepted conventions into a single reusable Skill. Edit anything before saving.",
+    "unsaved": "Draft — edit freely before saving",
+    "drafting": "Composing draft…",
+    "draftError": "Could not compose the skill draft.",
+    "fields": {
+      "name": "Name",
+      "description": "Description",
+      "type": "Type",
+      "body": "Body",
+      "tokenCount": "{count} chars"
+    },
+    "cancel": "Cancel",
+    "create": "Create skill",
+    "creating": "Creating…",
+    "created": "Skill created from conventions."
   }
 }

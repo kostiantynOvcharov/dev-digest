@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Native git pre-push hook → defers to the shared pr-self-review gate.
+# Installed into .git/hooks/pre-push by scripts/install-hooks.sh.
+# Governs pushes typed directly in a terminal (the PreToolUse hook governs the
+# ones Claude Code issues).
+exec "$(git rev-parse --show-toplevel)/.claude/hooks/pr-self-review-gate.sh"
