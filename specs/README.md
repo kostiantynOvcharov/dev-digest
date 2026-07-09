@@ -63,6 +63,7 @@ endpoints), not schemas or code.
 | ID | Title | Status | Supersedes |
 |----|-------|--------|------------|
 | SPEC-01 | Project Context Folder | approved | none |
+| SPEC-02 | Why+Risk Brief | draft | none |
 
 ## Acceptance criteria — write them in EARS
 EARS (Easy Approach to Requirements Syntax) makes each criterion a single, testable
