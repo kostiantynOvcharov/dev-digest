@@ -1,6 +1,7 @@
 import type { Container } from '../../platform/container.js';
 import type {
   Agent,
+  AgentContextLink,
   AgentSkillLink,
   AgentVersion,
   CiFailOn,
@@ -169,6 +170,68 @@ export class AgentsService {
     const resolvedOrder = order ?? existing.length;
     await this.repo.linkSkill(agentId, skillId, resolvedOrder);
     return this.skillLinks(agentId);
+  }
+
+  // ---- Context docs (SPEC-01) — attach/read markdown docs on an agent -------
+
+  /** Attached context docs for an agent as AgentContextLink[] (ordered), each
+   * flagged `missing` when its path is no longer in the doc-index snapshot.
+   * Workspace-scoped: undefined when the agent isn't in this workspace (→ 404). */
+  async contextLinks(
+    workspaceId: string,
+    agentId: string,
+  ): Promise<AgentContextLink[] | undefined> {
+    const agent = await this.repo.getById(workspaceId, agentId);
+    if (!agent) return undefined;
+    return this.buildContextLinks(workspaceId, agentId);
+  }
+
+  /** Read the attached docs + derive the `missing` flag against the snapshot. */
+  private async buildContextLinks(
+    workspaceId: string,
+    agentId: string,
+  ): Promise<AgentContextLink[]> {
+    const docs = await this.repo.linkedContextDocs(agentId);
+    const existing = await this.repo.existingSnapshotPaths(
+      workspaceId,
+      docs.map((d) => d.path),
+    );
+    return docs.map((d) => ({
+      agent_id: agentId,
+      path: d.path,
+      order: d.order,
+      missing: !existing.has(d.path),
+    }));
+  }
+
+  /**
+   * Set / reorder the whole ordered set of attached docs. Replaces the set in the
+   * given order. Returns the resulting ordered links (undefined → 404).
+   */
+  async setContextDocs(
+    workspaceId: string,
+    agentId: string,
+    paths: string[],
+  ): Promise<AgentContextLink[] | undefined> {
+    const agent = await this.repo.getById(workspaceId, agentId);
+    if (!agent) return undefined;
+    await this.repo.setContextDocs(agentId, paths);
+    return this.buildContextLinks(workspaceId, agentId);
+  }
+
+  /** Attach a single doc path (append or set order) — additive to existing. */
+  async linkContextDoc(
+    workspaceId: string,
+    agentId: string,
+    path: string,
+    order?: number,
+  ): Promise<AgentContextLink[] | undefined> {
+    const agent = await this.repo.getById(workspaceId, agentId);
+    if (!agent) return undefined;
+    const existing = await this.repo.linkedContextDocs(agentId);
+    const resolvedOrder = order ?? existing.length;
+    await this.repo.linkContextDoc(agentId, path, resolvedOrder);
+    return this.buildContextLinks(workspaceId, agentId);
   }
 
   /**

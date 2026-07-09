@@ -2,6 +2,7 @@ import type { Container } from '../../platform/container.js';
 import type {
   Agent,
   Skill,
+  SkillContextLink,
   SkillImportPreview,
   SkillSource,
   SkillType,
@@ -106,6 +107,68 @@ export class SkillsService {
     if (!skill) return undefined;
     const rows = await this.repo.agentsUsing(workspaceId, skillId);
     return rows.map(agentRowToDto);
+  }
+
+  // ---- Context docs (SPEC-01) — attach/read markdown docs on a skill --------
+
+  /** Attached context docs for a skill as SkillContextLink[] (ordered), each
+   * flagged `missing` when its path is no longer in the doc-index snapshot.
+   * Workspace-scoped: undefined when the skill isn't in this workspace (→ 404). */
+  async contextLinks(
+    workspaceId: string,
+    skillId: string,
+  ): Promise<SkillContextLink[] | undefined> {
+    const skill = await this.repo.getById(workspaceId, skillId);
+    if (!skill) return undefined;
+    return this.buildContextLinks(workspaceId, skillId);
+  }
+
+  /** Read the attached docs + derive the `missing` flag against the snapshot. */
+  private async buildContextLinks(
+    workspaceId: string,
+    skillId: string,
+  ): Promise<SkillContextLink[]> {
+    const docs = await this.repo.linkedContextDocs(skillId);
+    const existing = await this.repo.existingSnapshotPaths(
+      workspaceId,
+      docs.map((d) => d.path),
+    );
+    return docs.map((d) => ({
+      skill_id: skillId,
+      path: d.path,
+      order: d.order,
+      missing: !existing.has(d.path),
+    }));
+  }
+
+  /**
+   * Set / reorder the whole ordered set of attached docs. Replaces the set in the
+   * given order. Returns the resulting ordered links (undefined → 404).
+   */
+  async setContextDocs(
+    workspaceId: string,
+    skillId: string,
+    paths: string[],
+  ): Promise<SkillContextLink[] | undefined> {
+    const skill = await this.repo.getById(workspaceId, skillId);
+    if (!skill) return undefined;
+    await this.repo.setContextDocs(skillId, paths);
+    return this.buildContextLinks(workspaceId, skillId);
+  }
+
+  /** Attach a single doc path (append or set order) — additive to existing. */
+  async linkContextDoc(
+    workspaceId: string,
+    skillId: string,
+    path: string,
+    order?: number,
+  ): Promise<SkillContextLink[] | undefined> {
+    const skill = await this.repo.getById(workspaceId, skillId);
+    if (!skill) return undefined;
+    const existing = await this.repo.linkedContextDocs(skillId);
+    const resolvedOrder = order ?? existing.length;
+    await this.repo.linkContextDoc(skillId, path, resolvedOrder);
+    return this.buildContextLinks(workspaceId, skillId);
   }
 
   /**

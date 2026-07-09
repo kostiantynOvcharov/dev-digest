@@ -6,7 +6,7 @@ import * as schema from '../../db/schema.js';
 import type { AgentRow } from '../../db/rows.js';
 import type { ReviewRepository, FindingRow, PullRow, ReviewRow } from './repository.js';
 import { REVIEW_STRATEGY } from './constants.js';
-import { taskLine } from './helpers.js';
+import { taskLine, readDocWithinClone } from './helpers.js';
 import { loadDiff } from './diff-loader.js';
 
 /** Thrown by a run when the user cancels it mid-flight (between map files). */
@@ -201,11 +201,50 @@ export class ReviewRunExecutor {
       // and named — both for the model and in the trace's prompt-assembly view,
       // where bodies were previously concatenated with no boundary.
       const linkedSkills = await this.agents.linkedSkills(agent.id);
-      const skillBodies = linkedSkills
-        .filter((l) => l.skill.enabled)
-        .map((l) => `### ${l.skill.name}\n\n${l.skill.body}`);
+      const enabledLinkedSkills = linkedSkills.filter((l) => l.skill.enabled);
+      const skillBodies = enabledLinkedSkills.map((l) => `### ${l.skill.name}\n\n${l.skill.body}`);
       if (skillBodies.length) {
         runLog.info(`skills: ${skillBodies.length} enabled skill(s) attached`);
+      }
+
+      // Project context (SPEC-01) — resolve the merged set of attached doc PATHS
+      // FRESH at run time (a run is an immutable prompt snapshot). Order per
+      // Decision D2: skill-inherited docs first (each ENABLED linked skill's
+      // docs, in skill order then that skill's configured doc order), THEN the
+      // agent's own attached docs. Dedup by repo-relative path keeping the FIRST
+      // occurrence, so a doc attached to both a skill and the agent keeps its
+      // earlier skill position.
+      const orderedDocPaths: string[] = [];
+      const seenDocPaths = new Set<string>();
+      const pushDoc = (p: string) => {
+        if (seenDocPaths.has(p)) return;
+        seenDocPaths.add(p);
+        orderedDocPaths.push(p);
+      };
+      for (const { skill } of enabledLinkedSkills) {
+        for (const d of await this.container.skillsRepo.linkedContextDocs(skill.id)) pushDoc(d.path);
+      }
+      for (const d of await this.agents.linkedContextDocs(agent.id)) pushDoc(d.path);
+
+      // Read each doc's TEXT within the path-traversal guard. A doc that is
+      // unreadable/missing or whose path escapes the clone is OMITTED and the
+      // run continues (AC-12). `specs` are the successfully-read bodies (passed
+      // to the engine, which wraps each under `<untrusted source="spec-*">` —
+      // AC-13) and `specsRead` the corresponding injected paths (AC-14). The doc
+      // TEXT is never written to a log here — it belongs only in the trace's
+      // `prompt_assembly.specs` (populated by the engine).
+      const specs: string[] = [];
+      const specsRead: string[] = [];
+      if (repo.clonePath && orderedDocPaths.length) {
+        for (const p of orderedDocPaths) {
+          const body = await readDocWithinClone(repo.clonePath, p);
+          if (body === null) continue;
+          specs.push(body);
+          specsRead.push(p);
+        }
+        if (specsRead.length) {
+          runLog.info(`project context: ${specsRead.length} attached doc(s) injected`);
+        }
       }
 
       // ---- Engine: assemble → single-pass → grounding -----------------------
@@ -222,6 +261,10 @@ export class ReviewRunExecutor {
         strategy: agent.strategy ?? REVIEW_STRATEGY,
         // Skills block — omitted when the agent has no enabled, linked skills.
         ...(skillBodies.length ? { skills: skillBodies } : {}),
+        // Project context (SPEC-01) — attached doc bodies. Omitted when the
+        // merged set is empty so the prompt is byte-identical to the no-docs
+        // baseline (edge: zero attached docs).
+        ...(specs.length ? { specs } : {}),
         // T1.3 — pass the callers digest only when we built one. assemblePrompt
         // omits the section when this is empty/undefined.
         ...(callersDigest ? { callers: callersDigest } : {}),
@@ -309,7 +352,7 @@ export class ReviewRunExecutor {
         })),
         raw_output: outcome.raw,
         memory_pulled: [],
-        specs_read: [],
+        specs_read: specsRead,
         // Persisted log = the run's FULL event buffer (incl. shared pre-work:
         // diff load + intent), not just events recorded inside this method.
         log: runLog.logFor(runId),

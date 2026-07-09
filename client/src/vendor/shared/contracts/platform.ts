@@ -92,6 +92,14 @@ export const SettingsKnown = z.object({
   automatic_reviews: z.boolean().default(false),
   /** Per-feature model overrides (provider+model), keyed by FeatureModelId. */
   feature_models: z.record(FeatureModelId, FeatureModelChoice).default({}),
+  /** Project Context (SPEC-01): root folder names scanned for markdown docs.
+   * A configured name overrides the repo-intel walker's EXCLUDED_DIRS for
+   * that name (Decision D3). */
+  context_root_names: z.array(z.string()).default(['specs', 'docs', 'insights']),
+  /** Project Context (SPEC-01): total per-agent/skill token estimate above
+   * which the Context tab shows a non-blocking overflow warning (Decision
+   * D5) — nothing is auto-truncated or auto-dropped. */
+  context_token_warn_threshold: z.number().int().positive().default(8000),
 });
 export type SettingsKnown = z.infer<typeof SettingsKnown>;
 

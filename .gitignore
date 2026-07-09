@@ -31,3 +31,5 @@ server/pnpm-workspace.yaml
 
 # pr-self-review local verdict (machine-local, do not commit)
 .claude/pr-self-review.json
+.claude/.insights-prev
+.claude/.insights-reminded

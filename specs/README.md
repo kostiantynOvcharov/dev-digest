@@ -62,7 +62,7 @@ endpoints), not schemas or code.
 ## Spec index
 | ID | Title | Status | Supersedes |
 |----|-------|--------|------------|
-| _none yet_ | | | |
+| SPEC-01 | Project Context Folder | approved | none |
 
 ## Acceptance criteria — write them in EARS
 EARS (Easy Approach to Requirements Syntax) makes each criterion a single, testable

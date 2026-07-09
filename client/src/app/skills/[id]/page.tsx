@@ -14,7 +14,7 @@ import { typeColor } from "../_components/SkillCard/helpers";
 import { useSkills, useSkill, useUpdateSkill } from "../../../lib/hooks/skills";
 import { ApiError } from "../../../lib/api";
 
-const VALID_TABS = ["config", "preview", "stats", "versions", "evals"];
+const VALID_TABS = ["config", "context", "preview", "stats", "versions", "evals"];
 
 export default function SkillEditorPage() {
   const params = useParams<{ id: string }>();

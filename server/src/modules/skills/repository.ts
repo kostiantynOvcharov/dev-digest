@@ -1,4 +1,4 @@
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import type { Db } from '../../db/client.js';
 import * as t from '../../db/schema.js';
 import type { SkillSource, SkillType } from '@devdigest/shared';
@@ -32,6 +32,12 @@ export interface UpdateSkill {
   body?: string;
   enabled?: boolean;
   evidenceFiles?: string[] | null;
+}
+
+/** A context doc attached to a skill (path + order), from skill_context_docs. */
+export interface LinkedContextDocRow {
+  path: string;
+  order: number;
 }
 
 export class SkillsRepository {
@@ -151,5 +157,60 @@ export class SkillsRepository {
       .where(and(eq(t.agentSkills.skillId, skillId), eq(t.agents.workspaceId, workspaceId)))
       .orderBy(asc(t.agentSkills.order));
     return rows.map((r) => r.agent);
+  }
+
+  // ---- skill_context_docs link table (SPEC-01) ----------------------------
+  // Ordered set of markdown doc PATHS attached to a skill; every agent that
+  // loads the skill inherits these at run assembly (Decision D2). Mirrors the
+  // agent side; the link stores a repo-relative path, not a snapshot FK, so a
+  // deleted doc keeps its row and is later flagged "missing" (D6 / AC-19).
+
+  /** Context docs attached to a skill, in `order` ascending. */
+  async linkedContextDocs(skillId: string): Promise<LinkedContextDocRow[]> {
+    return this.db
+      .select({ path: t.skillContextDocs.path, order: t.skillContextDocs.order })
+      .from(t.skillContextDocs)
+      .where(eq(t.skillContextDocs.skillId, skillId))
+      .orderBy(asc(t.skillContextDocs.order));
+  }
+
+  /** Attach a doc path to a skill at a given order (idempotent: upserts order). */
+  async linkContextDoc(skillId: string, path: string, order: number): Promise<void> {
+    await this.db
+      .insert(t.skillContextDocs)
+      .values({ skillId, path, order })
+      .onConflictDoUpdate({
+        target: [t.skillContextDocs.skillId, t.skillContextDocs.path],
+        set: { order },
+      });
+  }
+
+  /**
+   * Replace the full ordered set of attached doc paths for a skill, assigning
+   * order = index (delete-all-then-insert, exactly like `agent.setSkills`).
+   */
+  async setContextDocs(skillId: string, paths: string[]): Promise<void> {
+    await this.db.delete(t.skillContextDocs).where(eq(t.skillContextDocs.skillId, skillId));
+    if (paths.length === 0) return;
+    await this.db
+      .insert(t.skillContextDocs)
+      .values(paths.map((path, i) => ({ skillId, path, order: i })));
+  }
+
+  /**
+   * Subset of `paths` that STILL exist in some `repo_context_docs` snapshot for a
+   * repo in `workspaceId` — used to derive the `missing` flag (AC-19). Reads the
+   * sibling snapshot TABLE directly (allowed); never imports project-context code.
+   */
+  async existingSnapshotPaths(workspaceId: string, paths: string[]): Promise<Set<string>> {
+    if (paths.length === 0) return new Set();
+    const rows = await this.db
+      .selectDistinct({ path: t.repoContextDocs.path })
+      .from(t.repoContextDocs)
+      .innerJoin(t.repos, eq(t.repos.id, t.repoContextDocs.repoId))
+      .where(
+        and(eq(t.repos.workspaceId, workspaceId), inArray(t.repoContextDocs.path, paths)),
+      );
+    return new Set(rows.map((r) => r.path));
   }
 }

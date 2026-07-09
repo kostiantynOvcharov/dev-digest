@@ -18,6 +18,7 @@ Reusable AI skills that provide specialized knowledge and workflows. Canonical l
 | [security](security/SKILL.md) | Full-stack | OWASP Top 10:2025, auth, injection, uploads, secrets |
 | [mermaid-diagram](mermaid-diagram/SKILL.md) | Shared | Mermaid diagrams in markdown (flowcharts, sequence, ERD, …) |
 | [engineering-insights](engineering-insights/SKILL.md) | Meta | Capture non-obvious findings into the touched module's INSIGHTS.md (read-first, dedup, append-only, fixed sections) |
+| [workflow-retro](workflow-retro/SKILL.md) | Meta | Manual post-run retrospective for a multi-agent workflow — run metrics (tokens, cost, cache efficiency, parallelism, launch order, per-agent breakdown, duplication), analysis, actionable proposals, and a trend ledger. Invoke only via `/workflow-retro`; never auto-runs |
 
 ## What Are Skills?
 

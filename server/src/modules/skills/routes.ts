@@ -17,6 +17,8 @@ import { SkillsService } from './service.js';
  *   GET    /skills/:id/versions     → body history (newest first)
  *   GET    /skills/:id/versions/:version → one body snapshot
  *   GET    /skills/:id/agents       → agents linking this skill (Stats tab)
+ *   GET    /skills/:id/context      → attached context docs (ordered, w/ missing)
+ *   POST   /skills/:id/context      → set/reorder attached docs OR attach one
  *   POST   /skills/import           → preview a .md/.zip upload (NO persist, NO exec)
  */
 
@@ -50,6 +52,18 @@ const ImportBody = z.object({
   filename: z.string().min(1),
   content_base64: z.string().min(1),
 });
+
+/** Either set the whole ordered set (`paths`) or attach one (`path`). Mirrors
+ * the agents `SetContextBody`; doc identity is a repo-relative path, not a uuid. */
+const SetContextBody = z
+  .object({
+    paths: z.array(z.string().min(1)).optional(),
+    path: z.string().min(1).optional(),
+    order: z.number().int().optional(),
+  })
+  .refine((b) => b.paths !== undefined || b.path !== undefined, {
+    message: 'Provide paths (set/reorder) or path (attach one)',
+  });
 
 export default async function skillsRoutes(appBase: FastifyInstance) {
   const app = appBase.withTypeProvider<ZodTypeProvider>();
@@ -123,6 +137,28 @@ export default async function skillsRoutes(appBase: FastifyInstance) {
     if (!agents) throw new NotFoundError('Skill not found');
     return agents;
   });
+
+  app.get('/skills/:id/context', { schema: { params: IdParams } }, async (req) => {
+    const { workspaceId } = await getContext(app.container, req);
+    const links = await service.contextLinks(workspaceId, req.params.id);
+    if (!links) throw new NotFoundError('Skill not found');
+    return links;
+  });
+
+  app.post(
+    '/skills/:id/context',
+    { schema: { params: IdParams, body: SetContextBody } },
+    async (req) => {
+      const { workspaceId } = await getContext(app.container, req);
+      const body = req.body;
+      const links =
+        body.paths !== undefined
+          ? await service.setContextDocs(workspaceId, req.params.id, body.paths)
+          : await service.linkContextDoc(workspaceId, req.params.id, body.path!, body.order);
+      if (!links) throw new NotFoundError('Skill not found');
+      return links;
+    },
+  );
 
   // Parse-only preview: decode + (optionally) unzip in memory, extract the
   // markdown core, list everything else as ignored. Nothing is persisted and

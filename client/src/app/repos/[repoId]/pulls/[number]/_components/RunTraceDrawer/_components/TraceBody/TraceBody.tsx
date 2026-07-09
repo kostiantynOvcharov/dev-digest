@@ -9,12 +9,19 @@ import type { RunTrace, FindingRecord } from "@devdigest/shared";
 import { PROMPT_COLORS } from "../../constants";
 import { formatSeconds, formatTokens } from "../../helpers";
 import { formatCost } from "@/lib/cost";
+import { estimateTokens } from "@/lib/tokens";
 import { s } from "../../styles";
 import { TraceSection } from "../TraceSection";
 import { ToolCallRow } from "../ToolCallRow";
 import { PromptBlock } from "../PromptBlock";
 import { FindingsSection } from "../FindingsSection";
 import { Row, Stat } from "../atoms";
+
+/** Wraps the Project-Context prompt block + its token-volume readout. */
+const SPECS_BLOCK_STYLE: React.CSSProperties = { display: "flex", flexDirection: "column", gap: 2 };
+
+/** Small muted token-volume readout under the Project-Context block. */
+const SPECS_TOKENS_STYLE: React.CSSProperties = { fontSize: 12, color: "var(--text-muted)", padding: "0 4px" };
 
 export function TraceBody({ trace, findings }: { trace: RunTrace; findings: FindingRecord[] }) {
   const t = useTranslations("runs");
@@ -83,7 +90,12 @@ export function TraceBody({ trace, findings }: { trace: RunTrace; findings: Find
           <PromptBlock label={t("trace.prompt.repoMap")} text={trace.prompt_assembly.repo_map} color={PROMPT_COLORS.repoMap} />
         )}
         {trace.prompt_assembly.specs != null && (
-          <PromptBlock label={t("trace.prompt.specs")} text={trace.prompt_assembly.specs} color={PROMPT_COLORS.specs} />
+          <div style={SPECS_BLOCK_STYLE}>
+            <PromptBlock label={t("trace.prompt.specs")} text={trace.prompt_assembly.specs} color={PROMPT_COLORS.specs} />
+            <span style={SPECS_TOKENS_STYLE}>
+              {t("trace.prompt.specsTokens", { count: estimateTokens(trace.prompt_assembly.specs) })}
+            </span>
+          </div>
         )}
         {trace.prompt_assembly.callers != null && (
           <PromptBlock label={t("trace.prompt.callers")} text={trace.prompt_assembly.callers} color={PROMPT_COLORS.callers} />

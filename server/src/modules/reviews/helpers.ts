@@ -1,8 +1,13 @@
 /**
  * Pure helpers for the review service (side-effect free; operate purely on
  * their arguments — no DB / network / `this`).
+ *
+ * Exception: `readDocWithinClone` performs a single guarded filesystem read (it
+ * still takes all inputs as arguments and touches no `this`/DB/network).
  */
 import type { Finding } from '@devdigest/shared';
+import { readFile } from 'node:fs/promises';
+import { isAbsolute, resolve, sep } from 'node:path';
 import type { FindingRow, PullRow, ReviewRow } from './repository.js';
 
 // reduceReviews + sliceDiff live in @devdigest/reviewer-core (pure engine logic
@@ -79,6 +84,34 @@ export function reviewToDto(
  * The TRUSTED part (ours) states the task and the non-negotiable rule: review
  * the whole diff and never withhold a security/correctness finding.
  */
+/**
+ * Safely read a repo-relative doc from the clone for prompt injection.
+ *
+ * Path-traversal guard (OWASP A01/A05): the attachment path originates from repo
+ * content and is therefore attacker-influenceable. We REJECT absolute paths and
+ * any path that, once resolved against `clonePath`, escapes the clone directory
+ * (`../…`, symlink-style traversal). Only paths strictly inside `clonePath` are
+ * read. Returns the file text, or `null` on ANY failure (traversal rejected,
+ * missing, unreadable) so the caller can omit the doc and continue the run
+ * without failing (AC-12).
+ *
+ * Never log the returned text into a secret-redacting log — the doc body belongs
+ * only in the trace's `prompt_assembly.specs` (populated by the engine).
+ */
+export async function readDocWithinClone(
+  clonePath: string,
+  relPath: string,
+): Promise<string | null> {
+  // Absolute paths never denote a repo-relative doc — reject outright.
+  if (isAbsolute(relPath)) return null;
+  const root = resolve(clonePath);
+  const abs = resolve(root, relPath);
+  // Must be STRICTLY within the clone (root + separator). This rejects both
+  // `../escape` and a sibling dir sharing a name prefix (`<root>-evil/…`).
+  if (abs !== root && !abs.startsWith(root + sep)) return null;
+  return readFile(abs, 'utf8').catch(() => null);
+}
+
 export function taskLine(pull: PullRow): string {
   return (
     `Review pull request #${pull.number} "${pull.title}" by ${pull.author}. ` +
