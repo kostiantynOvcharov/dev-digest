@@ -1,12 +1,12 @@
 import type { Container } from '../../platform/container.js';
-import type { Provider, Review, RunTrace, UnifiedDiff } from '@devdigest/shared';
+import type { Intent, Provider, Review, RunTrace, UnifiedDiff } from '@devdigest/shared';
 import { reviewPullRequest, countBlockers } from '@devdigest/reviewer-core';
 import { RunLogger } from '../../platform/run-logger.js';
 import * as schema from '../../db/schema.js';
 import type { AgentRow } from '../../db/rows.js';
 import type { ReviewRepository, FindingRow, PullRow, ReviewRow } from './repository.js';
 import { REVIEW_STRATEGY } from './constants.js';
-import { taskLine } from './helpers.js';
+import { taskLine, readDocWithinClone } from './helpers.js';
 import { loadDiff } from './diff-loader.js';
 
 /** Thrown by a run when the user cancels it mid-flight (between map files). */
@@ -105,6 +105,11 @@ export class ReviewRunExecutor {
     }
     runLog.info(`Diff ready — ${diff.files.length} changed file(s); starting ${jobs.length} agent run(s)`);
 
+    // Intent Layer — derived ONCE per PR (not per agent) and fanned out to every
+    // run's Live Log + trace via the shared runLog. Best-effort: a failure here
+    // must never break the review (the prompt stays identical to today's).
+    const intent = await this.buildIntent(workspaceId, pull, runLog);
+
     for (const { agent, runId } of jobs) {
       const agentStart = Date.now();
       logger?.info(
@@ -112,7 +117,7 @@ export class ReviewRunExecutor {
         `review: agent "${agent.name}" started (${agent.provider}/${agent.model})`,
       );
       try {
-        const outcome = await this.runOneAgent(workspaceId, pull, repo, diff, agent, runId, runLog);
+        const outcome = await this.runOneAgent(workspaceId, pull, repo, diff, intent, agent, runId, runLog);
         logger?.info(
           {
             runId,
@@ -141,6 +146,7 @@ export class ReviewRunExecutor {
     pull: PullRow,
     repo: typeof schema.repos.$inferSelect,
     diff: UnifiedDiff,
+    intent: Intent | undefined,
     agent: AgentRow,
     runId: string,
     parentLog: RunLogger,
@@ -184,6 +190,52 @@ export class ReviewRunExecutor {
 
       const task = taskLine(pull) + rankNote;
 
+      // Skills — the agent's linked skill bodies, injected as the prompt's
+      // `## Skills / rules` block. `linkedSkills` is already ordered by the link
+      // `order`; `skill.enabled` is the GLOBAL master switch (a disabled skill
+      // never reaches the prompt, even when linked). Omitted when empty so the
+      // prompt is byte-identical to the no-skills baseline.
+      //
+      // Each body is prefixed with a `### <name>` sub-header (nested under the
+      // section's `## Skills / rules`) so multiple skills are visually delimited
+      // and named — both for the model and in the trace's prompt-assembly view,
+      // where bodies were previously concatenated with no boundary.
+      const linkedSkills = await this.agents.linkedSkills(agent.id);
+      const enabledLinkedSkills = linkedSkills.filter((l) => l.skill.enabled);
+      const skillBodies = enabledLinkedSkills.map((l) => `### ${l.skill.name}\n\n${l.skill.body}`);
+      if (skillBodies.length) {
+        runLog.info(`skills: ${skillBodies.length} enabled skill(s) attached`);
+      }
+
+      // Project context (SPEC-01) — resolve the merged set of attached doc PATHS
+      // FRESH at run time (a run is an immutable prompt snapshot). The D2 merge
+      // (skill-inherited docs first in skill/doc order, then the agent's own
+      // attached docs, deduped keeping the FIRST occurrence) is SHARED with the
+      // Why+Risk brief via the agents service, so the two can never drift on
+      // which docs an agent injects (SPEC-02 X-review #3).
+      const orderedDocPaths = await this.container.agents.resolveContextDocPaths(agent.id);
+
+      // Read each doc's TEXT within the path-traversal guard. A doc that is
+      // unreadable/missing or whose path escapes the clone is OMITTED and the
+      // run continues (AC-12). `specs` are the successfully-read bodies (passed
+      // to the engine, which wraps each under `<untrusted source="spec-*">` —
+      // AC-13) and `specsRead` the corresponding injected paths (AC-14). The doc
+      // TEXT is never written to a log here — it belongs only in the trace's
+      // `prompt_assembly.specs` (populated by the engine).
+      const specs: string[] = [];
+      const specsRead: string[] = [];
+      if (repo.clonePath && orderedDocPaths.length) {
+        for (const p of orderedDocPaths) {
+          const body = await readDocWithinClone(repo.clonePath, p);
+          if (body === null) continue;
+          specs.push(body);
+          specsRead.push(p);
+        }
+        if (specsRead.length) {
+          runLog.info(`project context: ${specsRead.length} attached doc(s) injected`);
+        }
+      }
+
       // ---- Engine: assemble → single-pass → grounding -----------------------
       // The pure review pipeline lives in @devdigest/reviewer-core (shared with
       // the CI runner). The service owns only I/O: repo-intel context resolution
@@ -196,6 +248,12 @@ export class ReviewRunExecutor {
         // Per-agent review strategy (configured in the Agent editor); falls back
         // to the studio default. single-pass = whole diff in one call.
         strategy: agent.strategy ?? REVIEW_STRATEGY,
+        // Skills block — omitted when the agent has no enabled, linked skills.
+        ...(skillBodies.length ? { skills: skillBodies } : {}),
+        // Project context (SPEC-01) — attached doc bodies. Omitted when the
+        // merged set is empty so the prompt is byte-identical to the no-docs
+        // baseline (edge: zero attached docs).
+        ...(specs.length ? { specs } : {}),
         // T1.3 — pass the callers digest only when we built one. assemblePrompt
         // omits the section when this is empty/undefined.
         ...(callersDigest ? { callers: callersDigest } : {}),
@@ -204,6 +262,9 @@ export class ReviewRunExecutor {
         // PR author's description/body — untrusted; assemblePrompt wraps +
         // truncates it. Omitted when the PR has no body.
         ...(pull.body ? { prDescription: pull.body } : {}),
+        // Intent Layer — derived per PR; trusted, rendered as `## Review intent`
+        // with the one-signal scope rule. Omitted when intent derivation failed.
+        ...(intent ? { intent } : {}),
         task,
         sessionId: `${repo.owner}/${repo.name}#${pull.number}:${agent.name}`,
         onEvent: (e) => runLog.event(e.kind, e.msg, e.data),
@@ -280,7 +341,7 @@ export class ReviewRunExecutor {
         })),
         raw_output: outcome.raw,
         memory_pulled: [],
-        specs_read: [],
+        specs_read: specsRead,
         // Persisted log = the run's FULL event buffer (incl. shared pre-work:
         // diff load + intent), not just events recorded inside this method.
         log: runLog.logFor(runId),
@@ -328,6 +389,30 @@ export class ReviewRunExecutor {
    * rows per `getCallerSignatures` call) so the section stays under ~600
    * tokens even on heavy PRs.
    */
+  /**
+   * Intent Layer — derive (or reuse) the PR's intent for the `## Review intent`
+   * prompt slot. Best-effort like the other enrichments: a failure (e.g. missing
+   * provider key) is surfaced only as a Live Log line and the review proceeds
+   * with a prompt identical to today's. Recompute is button-only, so an existing
+   * intent is reused rather than regenerated here.
+   */
+  private async buildIntent(
+    workspaceId: string,
+    pull: PullRow,
+    runLog: RunLogger,
+  ): Promise<Intent | undefined> {
+    try {
+      return await runLog.step(
+        'Deriving PR intent',
+        () => this.container.intent.generateIfMissing(workspaceId, pull.id, runLog),
+        { kind: 'tool' },
+      );
+    } catch (err) {
+      runLog.info(`intent: generation failed — ${(err as Error).message}`);
+      return undefined;
+    }
+  }
+
   private async buildCallersDigest(
     repoId: string,
     diff: UnifiedDiff,

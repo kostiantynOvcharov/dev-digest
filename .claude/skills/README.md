@@ -6,6 +6,7 @@ Reusable AI skills that provide specialized knowledge and workflows. Canonical l
 
 | Skill | Scope | Description |
 |-------|-------|-------------|
+| [onion-architecture](onion-architecture/SKILL.md) | Backend | DevDigest's Onion Architecture — the four layers, the inward dependency rule, DI container, repository + workspace scoping, the pure reviewer-core engine; machine-enforced via `arch:check` (dependency-cruiser) |
 | [fastify-best-practices](fastify-best-practices/SKILL.md) | Backend | Fastify routes, plugins, JSON-schema validation, error handling |
 | [drizzle-orm-patterns](drizzle-orm-patterns/SKILL.md) | Backend | Drizzle schema, queries, relations, transactions, migrations |
 | [postgresql-table-design](postgresql-table-design/SKILL.md) | Backend | Postgres schema design, data types, indexing, constraints |
@@ -17,6 +18,7 @@ Reusable AI skills that provide specialized knowledge and workflows. Canonical l
 | [security](security/SKILL.md) | Full-stack | OWASP Top 10:2025, auth, injection, uploads, secrets |
 | [mermaid-diagram](mermaid-diagram/SKILL.md) | Shared | Mermaid diagrams in markdown (flowcharts, sequence, ERD, …) |
 | [engineering-insights](engineering-insights/SKILL.md) | Meta | Capture non-obvious findings into the touched module's INSIGHTS.md (read-first, dedup, append-only, fixed sections) |
+| [workflow-retro](workflow-retro/SKILL.md) | Meta | Manual post-run retrospective for a multi-agent workflow — run metrics (tokens, cost, cache efficiency, parallelism, launch order, per-agent breakdown, duplication), analysis, actionable proposals, and a trend ledger. Invoke only via `/workflow-retro`; never auto-runs |
 
 ## What Are Skills?
 

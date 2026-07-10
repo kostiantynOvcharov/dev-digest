@@ -1,0 +1,11 @@
+{
+  "name": "devdigest/onion-architecture",
+  "version": "0.1.0",
+  "private": true,
+  "summary": "Enforces DevDigest's Onion Architecture across the backend packages (server/ and reviewer-core/). Use when adding or changing a backend module, deciding where code belongs (route vs service vs repository vs adapter vs contract), wiring a dependency, reviewing imports, or fixing a dependency-cruiser / arch:check boundary failure. Covers the four layers, the inward dependency rule, the DI container, the repository + workspace-scoping pattern, the pure reviewer-core engine, and machine enforcement. Trigger terms: onion architecture, clean architecture, layering, dependency rule, boundary violation, arch:check, dependency-cruiser, new backend module, service, repository, adapter, container, vendor/shared.",
+  "skills": {
+    "onion-architecture": {
+      "path": "SKILL.md"
+    }
+  }
+}

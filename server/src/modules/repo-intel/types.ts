@@ -22,7 +22,20 @@
  * while still guaranteeing every consumer can fall back without throwing.
  */
 
+import type { ContextDocType } from '@devdigest/shared';
+
 export type IndexStatus = 'full' | 'partial' | 'degraded' | 'failed';
+
+/**
+ * One markdown doc discovered by the Project Context walk (SPEC-01). `type` is
+ * the canonical badge derived from the matched root folder name. `path` is
+ * repo-relative POSIX (never the absolute clone path).
+ */
+export interface DiscoveredContextDoc {
+  path: string;
+  type: ContextDocType;
+  sizeBytes: number;
+}
 
 export type DegradedReason =
   | 'flag_off'
@@ -161,6 +174,22 @@ export interface RepoIntel {
   getUnresolvedReferences(repoId: string, files: string[]): Promise<RefRow[]>;
   /** Top-N file paths by rank, filtered of tests/configs. */
   getConventionSamples(repoId: string, n: number): Promise<string[]>;
+
+  /**
+   * Discover markdown docs (SPEC-01 Project Context) under the given root folder
+   * names. Best-effort: an uncloned repo yields `[]` (never throws). Paths are
+   * repo-relative POSIX.
+   */
+  discoverDocs(repoId: string, rootNames: readonly string[]): Promise<DiscoveredContextDoc[]>;
+
+  /**
+   * Read the UTF-8 text of one repo-relative doc from the clone (SPEC-01
+   * preview, AC-5). Guarded (OWASP A01/A05): rejects absolute paths and any
+   * path that resolves outside the clone directory. THROWS on a rejected /
+   * missing / unreadable path — the caller maps that to a 404 without leaking
+   * the absolute clone path. Keeps clone access behind the facade.
+   */
+  readDocContent(repoId: string, relPath: string): Promise<string>;
 
   // --- T3: onboarding reading-path + critical paths (graph required) ------
   getTopFilesByRank(

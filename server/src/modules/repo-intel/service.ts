@@ -17,7 +17,7 @@
  * The constructor takes ONLY a Container. No astgrep / depgraph / tokenizer
  * deps are imported here — those land later and plug into this same shell.
  */
-import type { CodeSymbol, RepoRef } from '@devdigest/shared';
+import type { CodeSymbol, ContextDocType, RepoRef } from '@devdigest/shared';
 import type { Container } from '../../platform/container.js';
 import { extractEndpoints } from '../../adapters/codeindex/extract.js';
 import {
@@ -27,12 +27,13 @@ import {
   langForFile,
 } from '../../adapters/astgrep/index.js';
 import { readFile } from 'node:fs/promises';
-import { extname, join } from 'node:path';
+import { extname, isAbsolute, join, resolve, sep } from 'node:path';
 import { RepoIntelRepository, type FullSymbolRow } from './repository.js';
 import type {
   BlastCallerRow,
   BlastChangedSymbol,
   BlastResult,
+  DiscoveredContextDoc,
   FileRankRow,
   IndexResult,
   IndexState,
@@ -42,6 +43,7 @@ import type {
   SignatureRow,
   SymbolRow,
 } from './types.js';
+import { walkDocs } from './pipeline/walk-docs.js';
 import {
   BFS_DEPTH,
   DEFAULT_REPO_MAP_TOKEN_BUDGET,
@@ -632,6 +634,57 @@ export class RepoIntelService implements RepoIntel {
   }
 
   /**
+   * Discover markdown docs (SPEC-01 Project Context) under `rootNames`. Reads the
+   * clone via the same repo-basics lookup the other facade reads use; returns
+   * repo-relative POSIX paths with a canonical `type` badge. Best-effort: an
+   * uncloned repo (or an unreadable clone dir) yields `[]` — the project-context
+   * SERVICE decides whether a user-triggered reindex should surface that as an
+   * error, not the facade.
+   */
+  async discoverDocs(
+    repoId: string,
+    rootNames: readonly string[],
+  ): Promise<DiscoveredContextDoc[]> {
+    const repo = await this.repo.getRepoBasics(repoId);
+    if (!repo || !repo.clonePath) return [];
+    const files = await walkDocs(repo.clonePath, rootNames);
+    return files.map((f) => ({
+      path: f.path,
+      type: toDocType(f.type),
+      sizeBytes: f.sizeBytes,
+    }));
+  }
+
+  /**
+   * Read one repo-relative doc's UTF-8 text from the clone (SPEC-01 preview).
+   *
+   * Path-traversal guard (OWASP A01/A05): the path is derived from repo content
+   * and therefore attacker-influenceable. We REJECT absolute paths and any path
+   * that, once resolved against the clone, escapes it (`../…`, or a sibling dir
+   * sharing a name prefix). Same resolve-within-clone shape as
+   * `reviews/helpers.ts:readDocWithinClone`, kept local so clone access stays
+   * behind this facade. THROWS on a rejected / uncloned / unreadable path; the
+   * project-context service maps that to a 404 without leaking the absolute path.
+   */
+  async readDocContent(repoId: string, relPath: string): Promise<string> {
+    const repo = await this.repo.getRepoBasics(repoId);
+    if (!repo || !repo.clonePath) {
+      throw new Error('Repository clone is not available');
+    }
+    if (isAbsolute(relPath)) {
+      throw new Error('Doc path must be repo-relative');
+    }
+    const root = resolve(repo.clonePath);
+    const abs = resolve(root, relPath);
+    // Must be STRICTLY within the clone (root + separator) — blocks `../escape`
+    // and a prefix-sibling like `<root>-evil/…`.
+    if (abs !== root && !abs.startsWith(root + sep)) {
+      throw new Error('Doc path escapes the repository clone');
+    }
+    return readFile(abs, 'utf8');
+  }
+
+  /**
    * Top-N file paths by rank DESC, dropping tests/configs/migrations and any
    * caller-supplied `exclude` substrings. Over-fetches by 10× before filtering
    * so the post-filter still yields N where possible.
@@ -761,4 +814,13 @@ function enclosingSymbolName(
 
 async function readClone(clonePath: string, file: string): Promise<string | null> {
   return readFile(join(clonePath, file), 'utf8').catch(() => null);
+}
+
+/** Canonical Project Context badges. A configured root name outside this set
+ * (a custom workspace root — Decision D3) still lists its docs, tagged with the
+ * generic `docs` badge since the contract enum is fixed to these three. */
+const CANONICAL_DOC_TYPES: ReadonlySet<string> = new Set(['specs', 'docs', 'insights']);
+
+function toDocType(rootName: string): ContextDocType {
+  return (CANONICAL_DOC_TYPES.has(rootName) ? rootName : 'docs') as ContextDocType;
 }

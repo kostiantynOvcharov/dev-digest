@@ -9,9 +9,12 @@ import {
   vector,
   index,
   uniqueIndex,
+  primaryKey,
 } from 'drizzle-orm/pg-core';
 import { workspaces } from './core';
 import { repos } from './repos';
+import { agents } from './agents';
+import { skills } from './skills';
 
 // ============================================================ Context & codebase
 
@@ -123,4 +126,69 @@ export const onboarding = pgTable('onboarding', {
     .references(() => repos.id, { onDelete: 'cascade' }),
   json: jsonb('json').notNull(),
   generatedAt: timestamp('generated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ============================================================ Project Context (SPEC-01)
+//
+// Manual doc-attachment feature (NOT the repo-intel code indexing above). A doc
+// is identified by its repo-relative `path` (never a FK to the snapshot below —
+// a doc deleted from the clone must keep its attachment row so it can be flagged
+// "missing" rather than silently cascade-deleted, Decision D6).
+
+/** Ordered set of markdown doc paths manually attached to an agent. Behaviour
+ * mirrors `agentSkills` — re-attaching the same path upserts its `order`. */
+export const agentContextDocs = pgTable(
+  'agent_context_docs',
+  {
+    agentId: uuid('agent_id')
+      .notNull()
+      .references(() => agents.id, { onDelete: 'cascade' }),
+    path: text('path').notNull(),
+    order: integer('order').notNull().default(0),
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.agentId, t.path] }) }),
+);
+
+/** Ordered set of markdown doc paths attached to a skill. Every agent that
+ * loads the skill inherits these at run assembly (placed before the agent's
+ * own attached docs — Decision D2). */
+export const skillContextDocs = pgTable(
+  'skill_context_docs',
+  {
+    skillId: uuid('skill_id')
+      .notNull()
+      .references(() => skills.id, { onDelete: 'cascade' }),
+    path: text('path').notNull(),
+    order: integer('order').notNull().default(0),
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.skillId, t.path] }) }),
+);
+
+/** Per-repo doc-index snapshot — replaced wholesale (delete-all-then-insert, in
+ * one transaction) on every reindex. `type` is derived from the matched root
+ * folder name (`specs`/`docs`/`insights`, Decision D3). Attachments store paths,
+ * not a FK here, so this table can be freely replaced without touching links. */
+export const repoContextDocs = pgTable(
+  'repo_context_docs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    repoId: uuid('repo_id')
+      .notNull()
+      .references(() => repos.id, { onDelete: 'cascade' }),
+    path: text('path').notNull(),
+    type: text('type', { enum: ['specs', 'docs', 'insights'] }).notNull(),
+    sizeBytes: integer('size_bytes').notNull(),
+  },
+  (t) => ({ repoIdx: index('repo_context_docs_repo_idx').on(t.repoId) }),
+);
+
+/** One row per repo: when it was last (re)indexed for docs and how many files
+ * that scan found. `lastIndexedAt` is null for a never-indexed repo — the page
+ * distinguishes "never indexed" from "indexed, 0 docs" (empty-state edge case). */
+export const repoContextIndexState = pgTable('repo_context_index_state', {
+  repoId: uuid('repo_id')
+    .primaryKey()
+    .references(() => repos.id, { onDelete: 'cascade' }),
+  lastIndexedAt: timestamp('last_indexed_at', { withTimezone: true }),
+  filesIndexed: integer('files_indexed').notNull().default(0),
 });

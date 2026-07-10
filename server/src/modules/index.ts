@@ -5,6 +5,13 @@ import pulls from './pulls/routes.js';
 import polling from './polling/routes.js';
 import workspace from './workspace/routes.js';
 import agents from './agents/routes.js';
+import skills from './skills/routes.js';
+import conventions from './conventions/routes.js';
+import intent from './intent/routes.js';
+import blast from './blast/routes.js';
+import brief from './brief/routes.js';
+import diffSummary from './diff-summary/routes.js';
+import projectContext from './project-context/routes.js';
 import reviews from './reviews/routes.js';
 import repoIntel from './repo-intel/routes.js';
 
@@ -28,6 +35,13 @@ export const modules: Record<string, FastifyPluginAsync> = {
   polling,
   workspace,
   agents,
+  skills,
+  conventions,
+  intent,
+  blast,
+  brief,
+  diffSummary,
+  projectContext,
   reviews,
   repoIntel,
 };

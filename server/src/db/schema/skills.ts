@@ -10,8 +10,11 @@ export const skills = pgTable('skills', {
   name: text('name').notNull(),
   description: text('description').notNull(),
   type: text('type', { enum: ['rubric', 'convention', 'security', 'custom'] }).notNull(),
+  // TS-only enum widening: the column stays plain `text`, so adding a value
+  // generates NO migration (verified via db:generate). Keep in lock-step with
+  // SkillSource in both vendored contracts/knowledge.ts copies.
   source: text('source', {
-    enum: ['manual', 'imported_url', 'extracted', 'community'],
+    enum: ['manual', 'imported_url', 'imported_file', 'extracted', 'community'],
   }).notNull(),
   body: text('body').notNull(),
   enabled: boolean('enabled').notNull().default(true),

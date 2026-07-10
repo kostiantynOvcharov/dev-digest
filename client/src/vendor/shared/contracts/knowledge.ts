@@ -115,7 +115,13 @@ export type MemoryItem = z.infer<typeof MemoryItem>;
 export const SkillType = z.enum(['rubric', 'convention', 'security', 'custom']);
 export type SkillType = z.infer<typeof SkillType>;
 
-export const SkillSource = z.enum(['manual', 'imported_url', 'extracted', 'community']);
+export const SkillSource = z.enum([
+  'manual',
+  'imported_url',
+  'imported_file',
+  'extracted',
+  'community',
+]);
 export type SkillSource = z.infer<typeof SkillSource>;
 
 export const Skill = z.object({
@@ -139,6 +145,40 @@ export const CommunitySkill = z.object({
   desc: z.string(),
 });
 export type CommunitySkill = z.infer<typeof CommunitySkill>;
+
+// An immutable body snapshot captured in `skill_versions` whenever a skill's
+// body changes. Mirrors agent versioning (reproducibility + edit history): a
+// run trace records which skill bodies were in the prompt at run time.
+export const SkillVersion = z.object({
+  skill_id: z.string(),
+  version: z.number().int(),
+  body: z.string(),
+  created_at: z.string(),
+});
+export type SkillVersion = z.infer<typeof SkillVersion>;
+
+// One archive entry the importer DID NOT process. Skills are text + config only;
+// the importer extracts the markdown core and lists everything else (scripts,
+// binaries, assets) here so the UI can show — but never run — what was skipped.
+export const SkillImportIgnored = z.object({
+  path: z.string(),
+  size: z.number().int(),
+  reason: z.string(),
+});
+export type SkillImportIgnored = z.infer<typeof SkillImportIgnored>;
+
+// The result of parsing an uploaded .md/.zip WITHOUT persisting it. The client
+// shows this as a preview; the skill is created only after the user confirms
+// (a plain POST /skills with source 'imported_file', enabled false until vetted).
+export const SkillImportPreview = z.object({
+  name: z.string(),
+  description: z.string(),
+  type: SkillType,
+  source: SkillSource,
+  body: z.string(),
+  ignored_files: z.array(SkillImportIgnored),
+});
+export type SkillImportPreview = z.infer<typeof SkillImportPreview>;
 
 // ---- Conventions ----
 export const ConventionCandidate = z.object({

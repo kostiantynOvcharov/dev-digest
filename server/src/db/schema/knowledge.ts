@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, jsonb, timestamp, doublePrecision, boolean, vector, index } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, jsonb, timestamp, doublePrecision, boolean, integer, vector, index } from 'drizzle-orm/pg-core';
 import { now } from './_shared';
 import { workspaces } from './core';
 import { repos } from './repos';
@@ -35,8 +35,21 @@ export const conventions = pgTable('conventions', {
     .references(() => workspaces.id, { onDelete: 'cascade' }),
   repoId: uuid('repo_id').references(() => repos.id, { onDelete: 'cascade' }),
   rule: text('rule').notNull(),
+  // Free-text category used as a badge on the candidate card (e.g. "naming",
+  // "imports"). Nullable — the model may omit it.
+  category: text('category'),
   evidencePath: text('evidence_path'),
   evidenceSnippet: text('evidence_snippet'),
+  // Cited line range (1-based, inclusive). Drives the GitHub deep-link and the
+  // `file:line` label. Nullable — re-derived & verified by the grounding gate.
+  evidenceStartLine: integer('evidence_start_line'),
+  evidenceEndLine: integer('evidence_end_line'),
   confidence: doublePrecision('confidence'),
+  // Lifecycle status — source of truth for accept/reject/edit. The legacy
+  // `accepted` boolean below is kept in sync (`accepted === status==='accepted'`)
+  // so the vendored `ConventionCandidate` contract still validates.
+  status: text('status', { enum: ['pending', 'accepted', 'rejected'] })
+    .notNull()
+    .default('pending'),
   accepted: boolean('accepted').notNull().default(false),
 });

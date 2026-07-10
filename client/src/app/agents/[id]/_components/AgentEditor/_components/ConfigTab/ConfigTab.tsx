@@ -25,18 +25,9 @@ export function ConfigTab({ agent }: { agent: Agent }) {
   const [repoIntel, setRepoIntel] = React.useState(agent.repo_intel);
   const [enabled, setEnabled] = React.useState(agent.enabled);
 
-  // Reset local form when switching agents.
-  React.useEffect(() => {
-    setName(agent.name);
-    setDescription(agent.description);
-    setProvider(agent.provider);
-    setModel(agent.model);
-    setSystemPrompt(agent.system_prompt);
-    setStrategy(agent.strategy);
-    setCiFailOn(agent.ci_fail_on);
-    setRepoIntel(agent.repo_intel);
-    setEnabled(agent.enabled);
-  }, [agent.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Form state is seeded from `agent` above. Switching agents is handled by the
+  // parent remounting this component via `key={agent.id}`, so the state
+  // re-initializes from the new agent — no reset effect needed.
 
   const { data: models } = useProviderModels(provider);
   // Show the price (USD per 1M in/out tokens) in the label when the provider
@@ -49,8 +40,16 @@ export function ConfigTab({ agent }: { agent: Agent }) {
   const noModels = models !== undefined && models.length === 0;
 
   // Friendly labels for the strategy select (values come from constants).
-  const strategyOptions = STRATEGY_VALUES.map((v) => ({ value: v, label: t(`config.strategyOptions.${v}`) }));
-  const ciFailOnOptions = CI_FAIL_ON_VALUES.map((v) => ({ value: v, label: t(`config.ciFailOnOptions.${v}`) }));
+  // Memoized so the option arrays keep a stable identity across renders.
+  const strategyOptions = React.useMemo(
+    () => STRATEGY_VALUES.map((v) => ({ value: v, label: t(`config.strategyOptions.${v}`) })),
+    [t],
+  );
+  const ciFailOnOptions = React.useMemo(
+    () => CI_FAIL_ON_VALUES.map((v) => ({ value: v, label: t(`config.ciFailOnOptions.${v}`) })),
+    [t],
+  );
+  const providerOptions = React.useMemo(() => [...PROVIDER_OPTIONS], []);
 
   const save = () =>
     update.mutate(
@@ -94,7 +93,7 @@ export function ConfigTab({ agent }: { agent: Agent }) {
         <SelectInput
           value={provider}
           onChange={(v) => setProvider(v as Provider)}
-          options={[...PROVIDER_OPTIONS]}
+          options={providerOptions}
         />
       </FormField>
       <FormField

@@ -1,0 +1,58 @@
+import type { CSSProperties } from "react";
+
+/** Co-located styles for the agent editor's SkillsTab. */
+export const s = {
+  wrap: { maxWidth: 820 } satisfies CSSProperties,
+  header: { display: "flex", alignItems: "center", gap: 12, marginBottom: 6 } satisfies CSSProperties,
+  h2: { fontSize: 18, fontWeight: 700 } satisfies CSSProperties,
+  search: {
+    marginLeft: "auto",
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    padding: "6px 10px",
+    borderRadius: 7,
+    border: "1px solid var(--border)",
+    background: "var(--bg-surface)",
+    width: 200,
+  } satisfies CSSProperties,
+  searchInput: {
+    flex: 1,
+    fontSize: 13,
+    background: "transparent",
+    border: "none",
+    outline: "none",
+    color: "var(--text-primary)",
+  } satisfies CSSProperties,
+  hint: { fontSize: 13, color: "var(--text-secondary)", margin: "8px 0 18px" } satisfies CSSProperties,
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: 700,
+    letterSpacing: "0.05em",
+    textTransform: "uppercase",
+    color: "var(--text-muted)",
+    margin: "16px 0 8px",
+  } satisfies CSSProperties,
+  list: { display: "flex", flexDirection: "column", gap: 8 } satisfies CSSProperties,
+  row: (linked: boolean): CSSProperties => ({
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    padding: "10px 12px",
+    borderRadius: 8,
+    border: "1px solid var(--border)",
+    background: linked ? "var(--bg-surface)" : "var(--bg-primary)",
+    cursor: linked ? "grab" : "default",
+  }),
+  handle: { color: "var(--text-muted)", cursor: "grab", flexShrink: 0 } satisfies CSSProperties,
+  name: {
+    flex: 1,
+    fontSize: 13.5,
+    fontWeight: 600,
+    fontFamily: "var(--font-mono, monospace)",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  } satisfies CSSProperties,
+  noResults: { fontSize: 13, color: "var(--text-muted)", marginTop: 16 } satisfies CSSProperties,
+} as const;

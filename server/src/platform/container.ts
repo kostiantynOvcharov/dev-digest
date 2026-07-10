@@ -24,7 +24,10 @@ import { estimateCost } from '../adapters/llm/pricing.js';
 import { PriceBook } from './price-book.js';
 import { ConfigError } from './errors.js';
 import { AgentsRepository } from '../modules/agents/repository.js';
+import { SkillsRepository } from '../modules/skills/repository.js';
 import { ReviewRepository } from '../modules/reviews/repository.js';
+import { AgentsService } from '../modules/agents/service.js';
+import { IntentService } from '../modules/intent/service.js';
 import type { RepoIntel } from '../modules/repo-intel/types.js';
 import { RepoIntelService } from '../modules/repo-intel/service.js';
 import { type DepGraph, DepCruiseGraph } from '../adapters/depgraph/index.js';
@@ -71,7 +74,10 @@ export class Container {
   // runs). Constructed here, in the composition root, so consuming modules use
   // `container.agentsRepo` instead of reaching into another module's folder.
   private _agentsRepo?: AgentsRepository;
+  private _skillsRepo?: SkillsRepository;
   private _reviewRepo?: ReviewRepository;
+  private _agents?: AgentsService;
+  private _intent?: IntentService;
   private _repoIntel?: RepoIntel;
   private _depgraph?: DepGraph;
   private _tokenizer?: Tokenizer;
@@ -96,8 +102,31 @@ export class Container {
     return (this._agentsRepo ??= new AgentsRepository(this.db));
   }
 
+  get skillsRepo(): SkillsRepository {
+    return (this._skillsRepo ??= new SkillsRepository(this.db));
+  }
+
   get reviewRepo(): ReviewRepository {
     return (this._reviewRepo ??= new ReviewRepository(this.db));
+  }
+
+  /**
+   * Agents service. Exposed on the container so the reviews executor and the
+   * Why+Risk brief can both reach the shared `resolveContextDocPaths(agentId)`
+   * (Decision D2 merge) without a cross-module code import — same composition-
+   * root pattern as `intent` / the shared repos.
+   */
+  get agents(): AgentsService {
+    return (this._agents ??= new AgentsService(this));
+  }
+
+  /**
+   * Intent Layer service (the Intent card + the review flow's on-scope step).
+   * Exposed here so the reviews executor can derive intent without a
+   * cross-module code import — same pattern as the shared repos / repoIntel.
+   */
+  get intent(): IntentService {
+    return (this._intent ??= new IntentService(this));
   }
 
   get codeIndex(): CodeIndex {
