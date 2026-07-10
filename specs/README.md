@@ -64,6 +64,7 @@ endpoints), not schemas or code.
 |----|-------|--------|------------|
 | SPEC-01 | Project Context Folder | approved | none |
 | SPEC-02 | Why+Risk Brief | draft | none |
+| SPEC-03 | Per-file diff summaries ("What this does") | implemented | none |
 
 ## Acceptance criteria — write them in EARS
 EARS (Easy Approach to Requirements Syntax) makes each criterion a single, testable
