@@ -43,3 +43,21 @@
   - **Prefetch shared context once** — pass the plan unit-block + relevant INSIGHTS excerpts + template file paths inline (I did this partially); 49 duplicated file-reads is direct waste.
   - **Make vendored-`.js` regen one explicit lock-step step** after any `vendor/shared/*.ts` edit, then verify runtime load — avoids the 3× churn and the gap-fill's accidental revert.
   - Parallelism 0.57 is a symptom of the stale base (no safe concurrency in one tree); fixing the base unlocks real parallel implementers.
+
+## 2026-07-10 — spec-02-why-risk-brief (full chain: explore → spec → plan → cross-model → run-plan)
+- Run: 10 agents — Explore ×1, spec-creator ×1, implementation-planner ×1, implementer ×1 (WASTED, sonnet), general-purpose ×4 (Units 1-redo/2/4/3, opus), arch-reviewer + plan-verifier (sonnet); order Explore→spec→plan→U1(fail)→U1→U2→U4→U3→(arch∥verify). Plus a cross-model plan review via an OpenRouter script (Gemini 2.5 Pro, NOT an agent, ~$0.07).
+- Tokens: ~96.1M total (main 27.1M · agents 68.9M) · in 461k / out 534k / cache-read 89.7M.
+- Cost: **$91.48** (main $27.88 · agents $63.59) + ~$0.07 cross-model · ≈ **$9.7 per implemented unit** (agent-side, 4 units) · cache eff **0.973 main** / 0.69–0.89 agents.
+- Parallelism: 0.64 (forced-serial — in-tree implementers, no safe concurrency; arch∥verify was the only real overlap) · critical path: Unit 3 general-purpose (897s, $18.15) · tool errors: 4 main + 5 agent (3 in the dead U1 implementer).
+- Hard: Unit 3 ($18.15, 137 turns, 21.5M tok — service+routes+D2 refactor+it-test) · Unit 4 ($10.89, 664s) · implementation-planner ($8.27).
+- Easy: arch-reviewer ($2.10, 171s) · U1-redo ($5.18, 158s).
+- Wasted: implementer #4 ($1.17, produced nothing) — `implementer` agent type forced a worktree cut from stale `main`; correctly self-aborted, re-run in-tree via `general-purpose`.
+- Duplicated: the "intent-as-template" spine re-read across agents — `reviews.ts` schema (4 agents), `IntentCard.tsx` + `intent.ts` hook (3 each: Explore, planner, U4), `prompt.ts` (2).
+- Missed: nothing functional (plan-verifier PASSED 17/17 ACs + D1-D6 + 6 X-review amendments). Process: the `composeSmartDiff` cross-module smell surfaced only at arch-review (adjudicated as convention-consistent, no fix).
+- Positive trend: main-loop **$27.88 @ 0.973 cache eff** vs prior session's $159/61% — the `engineering-insights` Stop-hook fix (prior retro action #1, commit 1a7c022) worked.
+- Actions:
+  - **Pass `model: "sonnet"` to the `general-purpose` implementers — biggest lever, and the lesson's own instruction I missed.** Switching from `implementer` (sonnet) to `general-purpose` silently inherited Opus; Units 1-redo/2/3/4 on Opus = $38.96. On Sonnet ≈ 1/5 → ~$8, saving ~$30/run. The reviewers (arch/verify) staying on Sonnet was correct.
+  - **Don't use the `implementer` agent type while `main` lags the working branch** (`main` was 15 behind `lesson5`): its forced worktree-from-`main` guarantees a wasted spawn. Use `general-purpose` in-tree until main is current. (Durable — record via engineering-insights.)
+  - **Prefetch the intent-template spine once** (`IntentCard.tsx`, `intent.ts`, `intent/{service,routes,helpers}.ts`, `reviews.ts` schema) and embed excerpts in the spec/plan/implementer briefs — 3-4 agents re-read each.
+  - Parallelism 0.64: the plan's batch A (U2∥U4, disjoint packages) was serialized by the stale-base in-tree constraint; merging main up (or basing worktrees on `lesson5`) would let U2+U4 overlap (~250s wall saved). Otherwise accept serial as the safe choice.
+  - Keep the OpenRouter cross-model-review-as-script pattern (~$0.07, off the agent budget) — cheap, effective, different model family.

@@ -208,23 +208,12 @@ export class ReviewRunExecutor {
       }
 
       // Project context (SPEC-01) — resolve the merged set of attached doc PATHS
-      // FRESH at run time (a run is an immutable prompt snapshot). Order per
-      // Decision D2: skill-inherited docs first (each ENABLED linked skill's
-      // docs, in skill order then that skill's configured doc order), THEN the
-      // agent's own attached docs. Dedup by repo-relative path keeping the FIRST
-      // occurrence, so a doc attached to both a skill and the agent keeps its
-      // earlier skill position.
-      const orderedDocPaths: string[] = [];
-      const seenDocPaths = new Set<string>();
-      const pushDoc = (p: string) => {
-        if (seenDocPaths.has(p)) return;
-        seenDocPaths.add(p);
-        orderedDocPaths.push(p);
-      };
-      for (const { skill } of enabledLinkedSkills) {
-        for (const d of await this.container.skillsRepo.linkedContextDocs(skill.id)) pushDoc(d.path);
-      }
-      for (const d of await this.agents.linkedContextDocs(agent.id)) pushDoc(d.path);
+      // FRESH at run time (a run is an immutable prompt snapshot). The D2 merge
+      // (skill-inherited docs first in skill/doc order, then the agent's own
+      // attached docs, deduped keeping the FIRST occurrence) is SHARED with the
+      // Why+Risk brief via the agents service, so the two can never drift on
+      // which docs an agent injects (SPEC-02 X-review #3).
+      const orderedDocPaths = await this.container.agents.resolveContextDocPaths(agent.id);
 
       // Read each doc's TEXT within the path-traversal guard. A doc that is
       // unreadable/missing or whose path escapes the clone is OMITTED and the

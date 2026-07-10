@@ -43,6 +43,24 @@ export const Risk = z.object({
 export const Risks = z.object({
     risks: z.array(Risk),
 });
+// ---- Why+Risk Brief (SPEC-02 synthesis) -----------------------------------
+// NOTE: this is a DIFFERENT contract from the composed `PrBrief` below (D1).
+// `Brief` is the ONE-LLM-call synthesis persisted in `pr_brief.json`; Intent
+// and Blast Radius stay separate INPUT cards, not fields of the brief.
+/** One "read this first" location, most-important-first in `Brief.review_focus`. */
+export const ReviewFocusItem = z.object({
+    file: z.string(),
+    line: z.number().int().optional(),
+    reason: z.string(),
+});
+/** The synthesized Why+Risk brief for a PR (reuses `RiskSeverity` + `Risk`). */
+export const Brief = z.object({
+    what: z.string(),
+    why: z.string(),
+    risk_level: RiskSeverity,
+    risks: z.array(Risk),
+    review_focus: z.array(ReviewFocusItem),
+});
 // ---- PR History ----
 export const PrHistoryItem = z.object({
     pr_number: z.number().int(),

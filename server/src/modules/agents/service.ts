@@ -235,6 +235,39 @@ export class AgentsService {
   }
 
   /**
+   * Resolve the ordered, deduped set of context-doc repo-relative PATHS an agent
+   * contributes (Decision D2), FRESH: each ENABLED linked skill's docs FIRST (in
+   * skill order, then that skill's configured doc order), THEN the agent's own
+   * attached docs. Deduped by path keeping the FIRST (skill) occurrence, so a doc
+   * attached to both a skill and the agent keeps its earlier skill position.
+   *
+   * Extracted from the review run-executor's inline merge so the Why+Risk brief
+   * and the review run can never drift on which docs an agent injects (SPEC-02
+   * X-review #3). The caller reads each path within a within-clone path-traversal
+   * guard — this returns paths only, never file contents, and is NOT
+   * workspace-scoped (callers already hold the agent via a scoped lookup).
+   */
+  async resolveContextDocPaths(agentId: string): Promise<string[]> {
+    const linkedSkills = await this.repo.linkedSkills(agentId);
+    const enabledLinkedSkills = linkedSkills.filter((l) => l.skill.enabled);
+
+    const ordered: string[] = [];
+    const seen = new Set<string>();
+    const push = (p: string) => {
+      if (seen.has(p)) return;
+      seen.add(p);
+      ordered.push(p);
+    };
+    // Cross-module data (skill docs) is reached through the container-exposed
+    // repo, never a skills-module code import — per the onion boundary rules.
+    for (const { skill } of enabledLinkedSkills) {
+      for (const d of await this.container.skillsRepo.linkedContextDocs(skill.id)) push(d.path);
+    }
+    for (const d of await this.repo.linkedContextDocs(agentId)) push(d.path);
+    return ordered;
+  }
+
+  /**
    * Dynamic model list from the provider adapter's /models. Degrades gracefully
    * to [] if the provider key is not configured (the editor still renders).
    */

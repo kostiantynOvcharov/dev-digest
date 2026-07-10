@@ -1,10 +1,17 @@
 "use client";
 
 import React from "react";
+import { useTranslations } from "next-intl";
 import { SectionLabel, Button } from "@devdigest/ui";
 import { DiffViewer, type DiffCommentApi } from "@/components/diff-viewer";
 import { SmartDiffViewer } from "@/components/SmartDiffViewer";
-import { usePrComments, useCreatePrComment, useSmartDiff, usePrReviews } from "@/lib/hooks/reviews";
+import {
+  usePrComments,
+  useCreatePrComment,
+  useSmartDiff,
+  usePrReviews,
+  useGenerateDiffSummaries,
+} from "@/lib/hooks/reviews";
 import { notify } from "@/lib/toast";
 import type { PrFile } from "@devdigest/shared";
 
@@ -19,6 +26,7 @@ interface DiffTabProps {
 }
 
 export function DiffTab({ prId, filesCount, files, canComment, onOpenFinding }: DiffTabProps) {
+  const t = useTranslations("shell");
   const { data: comments } = usePrComments(prId);
   const create = useCreatePrComment(prId);
   // Comments start hidden so the diff is clean by default — toggle to reveal.
@@ -32,6 +40,9 @@ export function DiffTab({ prId, filesCount, files, canComment, onOpenFinding }: 
   // newest-first), matching the findings the server used to compose the diff.
   const { data: reviews } = usePrReviews(prId);
   const latestFindings = reviews?.[0]?.findings ?? [];
+
+  const generateSummaries = useGenerateDiffSummaries(prId);
+  const hasAnySummary = !!smart?.groups.some((g) => g.files.some((f) => f.pseudocode_summary));
 
   const commentCount = comments?.length ?? 0;
 
@@ -83,6 +94,16 @@ export function DiffTab({ prId, filesCount, files, canComment, onOpenFinding }: 
               onClick={() => setOrder("original")}
             >
               Original order
+            </Button>
+            <Button
+              kind="ghost"
+              size="sm"
+              icon="Sparkles"
+              loading={generateSummaries.isPending}
+              disabled={generateSummaries.isPending || !prId}
+              onClick={() => generateSummaries.mutate()}
+            >
+              {hasAnySummary ? t("diffViewer.regenerateSummaries") : t("diffViewer.generateSummaries")}
             </Button>
           </div>
         }

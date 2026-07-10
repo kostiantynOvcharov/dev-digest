@@ -93,6 +93,7 @@ export function SmartDiffViewer({ groups, files, findings, onOpenFinding }: Smar
                   headerExtra={
                     sum ? <SeverityBadge severity={sum.severity} count={sum.count} compact /> : undefined
                   }
+                  summary={sf.pseudocode_summary}
                 />
               );
             })}

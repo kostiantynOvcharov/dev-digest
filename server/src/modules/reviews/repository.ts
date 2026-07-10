@@ -1,6 +1,6 @@
 import type { Db } from '../../db/client.js';
 import * as t from '../../db/schema.js';
-import type { Finding, Intent, RunSummary, RunTrace } from '@devdigest/shared';
+import type { Finding, Intent, RunSummary, RunTrace, BriefStored } from '@devdigest/shared';
 
 /**
  * A2 — review data-access. The ONLY layer touching the DB for the review
@@ -144,6 +144,26 @@ export class ReviewRepository {
 
   getIntent(prId: string): Promise<Intent | undefined> {
     return pullRepo.getIntent(this.db, prId);
+  }
+
+  // ---- brief (pr_brief) ---------------------------------------------------
+
+  upsertBrief(prId: string, stored: BriefStored): Promise<void> {
+    return pullRepo.upsertBrief(this.db, prId, stored);
+  }
+
+  getBrief(prId: string): Promise<BriefStored | undefined> {
+    return pullRepo.getBrief(this.db, prId);
+  }
+
+  // ---- diff summary (pr_diff_summary) ------------------------------------
+
+  upsertDiffSummary(prId: string, map: pullRepo.DiffSummaryMap): Promise<void> {
+    return pullRepo.upsertDiffSummary(this.db, prId, map);
+  }
+
+  getDiffSummary(prId: string): Promise<pullRepo.DiffSummaryMap | undefined> {
+    return pullRepo.getDiffSummary(this.db, prId);
   }
 
   // ---- observability: agent_runs + run_traces ----------------------------

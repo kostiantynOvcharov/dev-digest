@@ -60,3 +60,10 @@ export const prBrief = pgTable('pr_brief', {
     .references(() => pullRequests.id, { onDelete: 'cascade' }),
   json: jsonb('json').notNull(),
 });
+
+export const prDiffSummary = pgTable('pr_diff_summary', {
+  prId: uuid('pr_id')
+    .primaryKey()
+    .references(() => pullRequests.id, { onDelete: 'cascade' }),
+  json: jsonb('json').notNull(),
+});

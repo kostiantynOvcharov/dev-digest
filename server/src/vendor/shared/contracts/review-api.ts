@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { Finding, Verdict } from './findings.js';
-import { Intent, SmartDiff, BlastRadius } from './brief.js';
+import { Intent, SmartDiff, BlastRadius, Brief } from './brief.js';
 
 /**
  * A2 — Review-Core API surface contracts. These extend the core
@@ -95,3 +95,41 @@ export const BlastRadiusResponse = BlastRadius.extend({
   prior_prs: z.array(BlastPriorPr),
 });
 export type BlastRadiusResponse = z.infer<typeof BlastRadiusResponse>;
+
+/**
+ * Why+Risk-brief response (`GET`/`POST /pulls/:id/brief`): the grounded `Brief`
+ * (`null` when no brief is cached → empty state) plus the metadata the card
+ * renders — `head_sha` the brief was generated against, the server-computed
+ * `outdated` flag (current PR head ≠ stored `head_sha`), `generated_at`, and the
+ * optional observability fields (`model`/`cost`/`tokens`) read from the LLM
+ * outcome. Mirrors `BlastRadiusResponse`: a core contract + UI/observability
+ * fields around it. The server-only `inputs` snapshot (see `BriefStored`) is NOT
+ * part of this transport shape.
+ */
+export const BriefResponse = z.object({
+  brief: Brief.nullable(),
+  head_sha: z.string(),
+  outdated: z.boolean(),
+  generated_at: z.string(),
+  model: z.string().optional(),
+  cost: z.number().nullable().optional(),
+  tokens: z.object({ in: z.number().int(), out: z.number().int() }).optional(),
+});
+export type BriefResponse = z.infer<typeof BriefResponse>;
+
+/**
+ * Server-only persisted shape stored in `pr_brief.json` — the grounded `Brief`
+ * plus generation metadata and an `inputs` snapshot (a permissive record of the
+ * deterministic inputs actually fed to the model) kept for reproducibility /
+ * debugging, since the brief has no run-trace like reviews do. NOT returned to
+ * the client (the response is derived into `BriefResponse`).
+ */
+export const BriefStored = Brief.extend({
+  head_sha: z.string(),
+  generated_at: z.string(),
+  model: z.string().optional(),
+  cost: z.number().nullable().optional(),
+  tokens: z.object({ in: z.number().int(), out: z.number().int() }).optional(),
+  inputs: z.record(z.string(), z.unknown()),
+});
+export type BriefStored = z.infer<typeof BriefStored>;

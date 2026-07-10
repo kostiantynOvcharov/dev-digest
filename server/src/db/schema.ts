@@ -29,7 +29,7 @@ export * from './schema/repo-intel';
 import { users, workspaces, workspaceMembers, settings } from './schema/core';
 import { repos } from './schema/repos';
 import { pullRequests, prFiles, prCommits } from './schema/pulls';
-import { reviews, findings, prIntent, prBrief } from './schema/reviews';
+import { reviews, findings, prIntent, prBrief, prDiffSummary } from './schema/reviews';
 import { skills, skillVersions } from './schema/skills';
 import { agents, agentVersions, agentSkills } from './schema/agents';
 import { memory, conventions } from './schema/knowledge';
@@ -69,6 +69,7 @@ export const schema = {
   findings,
   prIntent,
   prBrief,
+  prDiffSummary,
   skills,
   skillVersions,
   agents,

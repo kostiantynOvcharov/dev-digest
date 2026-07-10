@@ -15,5 +15,23 @@
     "blame": "blame",
     "noHistory": "No history available for this line.",
     "noCommits": "No commits found for this line."
-  }
+  },
+  "title": "PR Brief",
+  "emptyTitle": "No brief yet",
+  "emptyBody": "Generate a Why+Risk brief for this PR.",
+  "generate": "Generate brief",
+  "regenerate": "Regenerate",
+  "generating": "Generating brief…",
+  "outdated": "Outdated",
+  "outdatedAria": "This brief is outdated: the PR has changed since it was generated.",
+  "whatLabel": "What",
+  "whyLabel": "Why",
+  "risksHeader": "Risks",
+  "reviewFocus": "Review first",
+  "riskLevel": "Risk: {level}",
+  "riskHigh": "High",
+  "riskMedium": "Medium",
+  "riskLow": "Low",
+  "specsSource": "Specs source",
+  "specsNone": "None"
 }

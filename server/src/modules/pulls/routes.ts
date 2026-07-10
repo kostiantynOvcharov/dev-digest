@@ -9,6 +9,7 @@ import { IdParams } from '../_shared/schemas.js';
 import { AppError, NotFoundError } from '../../platform/errors.js';
 import { deriveReviewStatus } from './status.js';
 import { composeSmartDiff } from './smart-diff.js';
+import { hunkHash } from './hunk-hash.js';
 
 /**
  * F1 — pulls module. PR import via Octokit (list + per-PR detail).
@@ -332,7 +333,7 @@ export default async function pullsRoutes(appBase: FastifyInstance) {
             .where(eq(t.findings.reviewId, latest.id))
         : [];
 
-      return composeSmartDiff(
+      const smartDiff = composeSmartDiff(
         files.map((f) => ({
           path: f.path,
           additions: f.additions,
@@ -341,6 +342,30 @@ export default async function pullsRoutes(appBase: FastifyInstance) {
         })),
         findingRows.map((f) => ({ file: f.file, line: f.startLine })),
       );
+
+      // Overlay the "What this does" cache (`diff-summary` module), ONLY when
+      // the cached entry's hash still matches the file's CURRENT patch — a
+      // stale/missing entry leaves `pseudocode_summary` null (composeSmartDiff's
+      // default), never a fabricated or outdated sentence.
+      const [diffSummaryRow] = await container.db
+        .select()
+        .from(t.prDiffSummary)
+        .where(eq(t.prDiffSummary.prId, pr.id));
+      const summaryCache = (diffSummaryRow?.json ?? {}) as Record<
+        string,
+        { hunk_hash: string; summary: string }
+      >;
+      const patchByPath = new Map(files.map((f) => [f.path, f.patch ?? null]));
+      for (const group of smartDiff.groups) {
+        for (const file of group.files) {
+          const cached = summaryCache[file.path];
+          if (cached && cached.hunk_hash === hunkHash(patchByPath.get(file.path))) {
+            file.pseudocode_summary = cached.summary;
+          }
+        }
+      }
+
+      return smartDiff;
     },
   );
 

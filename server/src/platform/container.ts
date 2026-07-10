@@ -26,6 +26,7 @@ import { ConfigError } from './errors.js';
 import { AgentsRepository } from '../modules/agents/repository.js';
 import { SkillsRepository } from '../modules/skills/repository.js';
 import { ReviewRepository } from '../modules/reviews/repository.js';
+import { AgentsService } from '../modules/agents/service.js';
 import { IntentService } from '../modules/intent/service.js';
 import type { RepoIntel } from '../modules/repo-intel/types.js';
 import { RepoIntelService } from '../modules/repo-intel/service.js';
@@ -75,6 +76,7 @@ export class Container {
   private _agentsRepo?: AgentsRepository;
   private _skillsRepo?: SkillsRepository;
   private _reviewRepo?: ReviewRepository;
+  private _agents?: AgentsService;
   private _intent?: IntentService;
   private _repoIntel?: RepoIntel;
   private _depgraph?: DepGraph;
@@ -106,6 +108,16 @@ export class Container {
 
   get reviewRepo(): ReviewRepository {
     return (this._reviewRepo ??= new ReviewRepository(this.db));
+  }
+
+  /**
+   * Agents service. Exposed on the container so the reviews executor and the
+   * Why+Risk brief can both reach the shared `resolveContextDocPaths(agentId)`
+   * (Decision D2 merge) without a cross-module code import — same composition-
+   * root pattern as `intent` / the shared repos.
+   */
+  get agents(): AgentsService {
+    return (this._agents ??= new AgentsService(this));
   }
 
   /**

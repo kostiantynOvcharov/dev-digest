@@ -40,6 +40,10 @@
     "reply": "Reply",
     "viewOnGitHub": "View on GitHub",
     "postedToGitHub": "Posts to GitHub immediately",
-    "outdatedTitle": "{count} comment(s) on older revisions"
+    "outdatedTitle": "{count} comment(s) on older revisions",
+    "generateSummaries": "Generate summaries",
+    "regenerateSummaries": "Regenerate summaries",
+    "whatThisDoes": "What this does",
+    "summaryBadge": "summary"
   }
 }

@@ -4,7 +4,7 @@
 
 import React from "react";
 import { useTranslations } from "next-intl";
-import { Icon } from "@devdigest/ui";
+import { Badge, Icon } from "@devdigest/ui";
 import type { PrFile } from "@/lib/types";
 import type { FindingRecord } from "@devdigest/shared";
 import { AUTO_EXPAND_MAX_LINES } from "../constants";
@@ -38,6 +38,7 @@ export function FileCard({
   lineFindings,
   onFindingClick,
   headerExtra,
+  summary,
 }: {
   file: PrFile;
   commenting?: DiffCommentApi;
@@ -50,11 +51,15 @@ export function FileCard({
   onFindingClick?: (findingId: string) => void;
   /** Extra header content (e.g. a file-level "N findings" badge). */
   headerExtra?: React.ReactNode;
+  /** Smart Diff "What this does" one-line summary (model output — rendered as
+   *  plain text, never HTML). Omitted/null/empty → no badge, no body line. */
+  summary?: string | null;
 }) {
   const t = useTranslations("shell");
   const [open, setOpen] = React.useState(
     defaultOpen ?? (file.additions ?? 0) + (file.deletions ?? 0) <= AUTO_EXPAND_MAX_LINES
   );
+  const summaryText = summary?.trim() || null;
   const lines = React.useMemo(() => parsePatch(file.patch), [file.patch]);
 
   // Group this file's comments into threads, then split into ones we can anchor
@@ -93,9 +98,21 @@ export function FileCard({
           </span>
         )}
         {headerExtra}
+        {summaryText && (
+          <Badge icon="Sparkles" color="var(--accent-text)" bg="var(--accent-bg)">
+            {t("diffViewer.summaryBadge")}
+          </Badge>
+        )}
       </div>
       {open && (
         <div style={s.fileBody}>
+          {summaryText && (
+            <div style={s.summaryLine}>
+              <Icon.Sparkles size={12} style={s.summaryIcon} />
+              <span style={s.summaryLabel}>{t("diffViewer.whatThisDoes")}:</span>
+              <span style={s.summaryText}>{summaryText}</span>
+            </div>
+          )}
           {lines.length === 0 ? (
             <div style={s.noDiff}>{t("diffViewer.noDiffText")}</div>
           ) : (

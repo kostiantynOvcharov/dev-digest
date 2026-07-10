@@ -15,6 +15,7 @@ export const FeatureModelId = z.enum([
     'risk_brief',
     'conformance',
     'conventions',
+    'diff_summary',
 ]);
 /** A chosen provider + model for one feature. */
 export const FeatureModelChoice = z.object({
@@ -56,6 +57,13 @@ export const FEATURE_MODELS = [
         description: 'Extracts coding conventions from the repo.',
         defaultProvider: 'openai',
         defaultModel: 'gpt-5.4',
+    },
+    {
+        id: 'diff_summary',
+        label: 'Diff Summary',
+        description: 'Summarizes what each changed file does.',
+        defaultProvider: 'openrouter',
+        defaultModel: 'deepseek/deepseek-chat',
     },
 ];
 // ---- Settings ----

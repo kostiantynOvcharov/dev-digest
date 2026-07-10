@@ -1,8 +1,12 @@
 import type { CSSProperties } from "react";
 
 export const s = {
-  // Intent + Blast Radius side-by-side (the PR brief), wrapping on narrow widths.
-  brief: {
+  // PR Brief is the full-width hero at the top of the Overview.
+  hero: {
+    marginBottom: 24,
+  } satisfies CSSProperties,
+  // Intent + Blast Radius sit side-by-side below the brief, wrapping on narrow widths.
+  twoCol: {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))",
     gap: 24,

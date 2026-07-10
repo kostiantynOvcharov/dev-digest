@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { Finding, Verdict } from './findings.js';
-import { Intent, SmartDiff, BlastRadius } from './brief.js';
+import { Intent, SmartDiff, BlastRadius, Brief } from './brief.js';
 
 /**
  * A2 — Review-Core API surface contracts. These extend the core
@@ -95,3 +95,24 @@ export const BlastRadiusResponse = BlastRadius.extend({
   prior_prs: z.array(BlastPriorPr),
 });
 export type BlastRadiusResponse = z.infer<typeof BlastRadiusResponse>;
+
+/**
+ * Why+Risk-brief response (`GET`/`POST /pulls/:id/brief`): the grounded `Brief`
+ * (`null` when no brief is cached → empty state) plus the metadata the card
+ * renders — `head_sha` the brief was generated against, the server-computed
+ * `outdated` flag (current PR head ≠ stored `head_sha`), `generated_at`, and the
+ * optional observability fields (`model`/`cost`/`tokens`) read from the LLM
+ * outcome. Mirrors `BlastRadiusResponse`: a core contract + UI/observability
+ * fields around it. (The server-only `inputs` snapshot is NOT part of this
+ * transport shape, so `BriefStored` is not mirrored on the client.)
+ */
+export const BriefResponse = z.object({
+  brief: Brief.nullable(),
+  head_sha: z.string(),
+  outdated: z.boolean(),
+  generated_at: z.string(),
+  model: z.string().optional(),
+  cost: z.number().nullable().optional(),
+  tokens: z.object({ in: z.number().int(), out: z.number().int() }).optional(),
+});
+export type BriefResponse = z.infer<typeof BriefResponse>;

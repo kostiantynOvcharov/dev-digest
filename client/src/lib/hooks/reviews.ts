@@ -62,6 +62,28 @@ export function useSmartDiff(prId: string | null | undefined) {
   });
 }
 
+/**
+ * (Re)generate the "What this does" per-file diff summaries now — ONE batched
+ * LLM call over Smart Diff's Core-logic files, cached server-side. Invalidates
+ * the Smart Diff query so the GET refetches and fills in `pseudocode_summary`.
+ * This is a PRIMARY action → surfaces server errors as a toast (mirrors
+ * `useGenerateBrief`).
+ */
+export function useGenerateDiffSummaries(prId: string | null | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<Record<string, { hunk_hash: string; summary: string }>>(
+      `/pulls/${prId}/smart-diff/summaries`,
+    ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["smart-diff", prId] });
+    },
+    onError: (err) => {
+      notify.error(err instanceof Error ? err.message : "Couldn't generate the diff summaries.");
+    },
+  });
+}
+
 // ---- Persisted reviews + findings for a PR ----
 export function usePrReviews(prId: string | null | undefined) {
   return useQuery({
