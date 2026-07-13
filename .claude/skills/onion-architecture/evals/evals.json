@@ -1,0 +1,60 @@
+{
+  "skill_name": "onion-architecture",
+  "description": "Evals for the onion-architecture skill. Fixtures under fixtures/ contain deliberately planted layering violations with NO hint comments; PLANTED.md is the grading key (do not show it to the agent under test). Paths in `files` are relative to this file.",
+  "evals": [
+    {
+      "id": 1,
+      "name": "detect-layered-module-violations",
+      "prompt": "This is a new backend module for the DevDigest server (server/src/modules/notifications/). Review the four attached files (routes.ts, service.ts, repository.ts, helpers.ts) for any architecture / layering problems before a PR is opened, and say exactly what to fix and how. For each finding cite the file + offending code, name the layer rule it breaks, and give the fix. Also call out anything that looks suspicious but is actually fine.",
+      "expected_output": "Identifies all planted layering violations: routes querying the DB directly (route-no-direct-db, 2 places), service new-ing a concrete OctokitGitHubClient instead of using container.github() interface, service importing drizzle-orm / querying DB directly (service-no-direct-db), service importing a sibling module's repository (no-cross-module-internals), repository importing from adapters/ (repository-no-adapters), and a repository delete missing the workspaceId predicate (tenancy). Should NOT flag the legitimate db/rows row-type imports or the pure helpers.ts.",
+      "files": [
+        "fixtures/eval-1-notifications/routes.ts",
+        "fixtures/eval-1-notifications/service.ts",
+        "fixtures/eval-1-notifications/repository.ts",
+        "fixtures/eval-1-notifications/helpers.ts"
+      ],
+      "assertions": [
+        { "text": "Flags routes.ts querying the DB directly (db.select/db.update) — route-no-direct-db", "type": "detection" },
+        { "text": "Flags service.ts new-ing a concrete OctokitGitHubClient instead of using container.github() interface", "type": "detection" },
+        { "text": "Flags service.ts importing drizzle-orm / querying the DB directly in countUnread — service-no-direct-db", "type": "detection" },
+        { "text": "Flags service.ts importing the sibling agents/repository.js — no-cross-module-internals (use container.agentsRepo)", "type": "detection" },
+        { "text": "Flags repository.ts importing from adapters/ (renderMarkdown) — repository-no-adapters", "type": "detection" },
+        { "text": "Flags repository.ts deleteById missing the workspaceId predicate (cross-tenant / tenancy guard)", "type": "detection" },
+        { "text": "Does NOT falsely flag the legitimate db/rows row-type imports or the pure helpers.ts", "type": "false-positive" }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "detect-core-purity-violations",
+      "prompt": "Two files from the DevDigest backend. The first is a shared contract (server/src/vendor/shared/contracts/notifications.ts), the second is part of the pure review engine (reviewer-core/src/enrich.ts). Are these OK from an architecture standpoint, or is something in the wrong layer? Point out each problem, cite the file + offending code, name the rule it breaks, and give the fix. Note anything that is actually correct.",
+      "expected_output": "Flags the contract for importing fastify (FastifyRequest) and the db/schema Drizzle table, and for holding presentation logic (notificationFromRequest) — core-stays-pure. Flags reviewer-core/enrich.ts for importing node:fs, node:child_process, and simple-git — the reviewer-core iron rule (no I/O); the fix is to receive file contents / commits as arguments. Recognizes the injected LLMProvider usage is correct.",
+      "files": [
+        "fixtures/eval-2-core/vendor-shared-contracts-notifications.ts",
+        "fixtures/eval-2-core/reviewer-core-src-enrich.ts"
+      ],
+      "assertions": [
+        { "text": "Flags the contract importing fastify (FastifyRequest) — core-stays-pure", "type": "detection" },
+        { "text": "Flags the contract importing the db/schema Drizzle table — core-stays-pure", "type": "detection" },
+        { "text": "Flags the contract holding presentation logic (notificationFromRequest reading req.body)", "type": "detection" },
+        { "text": "Flags reviewer-core importing node:fs and node:child_process — core-no-node-io-builtins", "type": "detection" },
+        { "text": "Flags reviewer-core importing simple-git — core-no-io-libraries", "type": "detection" },
+        { "text": "Recommends passing file contents / commits in as arguments (keep the injected LLMProvider)", "type": "quality" }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "place-new-module",
+      "prompt": "I'm adding a 'webhooks' feature to the DevDigest server. It needs to (a) store webhook subscriptions in Postgres, scoped per workspace, and (b) call GitHub's API to register the webhook on the repo when a subscription is created. Which files should I create, what goes in each, and how do I wire the GitHub call and register the module? Give me a concrete DevDigest-specific plan I can follow step by step, including where the GitHub call is obtained from, how workspace scoping is handled, how new DB tables/migrations are done, where shared request/response shapes go, and how the module is registered.",
+      "expected_output": "Proposes the layered recipe: modules/webhooks/{routes.ts, service.ts, repository.ts}. Routes: Zod schema + getContext + delegate, no DB. Service: orchestrates, owns repo, takes workspaceId first. Repository: Drizzle only, every where() workspace-scoped. GitHub call via the GitHubClient interface from container.github(), NOT new OctokitGitHubClient(). New table in db/schema/*.ts + pnpm db:generate (no hand-written migration). Shared request/response shapes as Zod contracts in vendor/shared/contracts (both copies). Register with one line in modules/index.ts.",
+      "files": [],
+      "assertions": [
+        { "text": "Proposes the layered split modules/webhooks/{routes.ts, service.ts, repository.ts}", "type": "quality" },
+        { "text": "Routes = Zod + getContext + delegate, no DB; Service orchestrates + takes workspaceId first", "type": "quality" },
+        { "text": "Repository is the only place with Drizzle, and every where() is workspace-scoped", "type": "quality" },
+        { "text": "GitHub call via the GitHubClient interface from container.github(), NOT new OctokitGitHubClient()", "type": "detection" },
+        { "text": "New table in db/schema/*.ts + pnpm db:generate (no hand-written migration)", "type": "quality" },
+        { "text": "Shared shapes as Zod contracts in vendor/shared/contracts; register module with one line in modules/index.ts", "type": "quality" }
+      ]
+    }
+  ]
+}

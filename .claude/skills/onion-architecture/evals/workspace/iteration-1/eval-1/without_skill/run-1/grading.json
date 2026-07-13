@@ -1,0 +1,48 @@
+{
+  "eval_id": 1,
+  "config": "without_skill",
+  "expectations": [
+    {
+      "text": "Flags routes.ts querying the DB directly (route-no-direct-db)",
+      "passed": true,
+      "evidence": "C1: routes query DB directly; identifies drizzle/db-schema imports as the smell."
+    },
+    {
+      "text": "Flags service new-ing concrete OctokitGitHubClient instead of container.github()",
+      "passed": true,
+      "evidence": "H1: concrete adapter, dependency-inversion violation; recommends a GitHubClient port from container."
+    },
+    {
+      "text": "Flags service querying DB directly in countUnread (service-no-direct-db)",
+      "passed": true,
+      "evidence": "C2: application->infrastructure leak, push count into repository."
+    },
+    {
+      "text": "Flags service importing sibling agents/repository.js (no-cross-module-internals)",
+      "passed": true,
+      "evidence": "M1: cross-module reach into another module's repository, also dead code."
+    },
+    {
+      "text": "Flags repository importing from adapters/ (repository-no-adapters)",
+      "passed": true,
+      "evidence": "H4: repository imports renderMarkdown from an unrelated ripgrep adapter."
+    },
+    {
+      "text": "Flags repository deleteById missing workspaceId predicate (tenancy)",
+      "passed": true,
+      "evidence": "M3: deleteById not workspace-scoped, cross-tenant delete."
+    },
+    {
+      "text": "Does NOT falsely flag db/rows row-type imports or pure helpers.ts",
+      "passed": true,
+      "evidence": "'Looks suspicious but is actually fine' clears helpers.ts and the repository's Drizzle imports."
+    }
+  ],
+  "notes": "7/7 too. Substance matched, but uses generic clean-arch vocabulary; no exact rule names, no db/rows carve-out citation, no known-warn baseline. (CLAUDE.md was auto-injected into the subagent, giving it some DevDigest context.)",
+  "summary": {
+    "pass_rate": 1.0,
+    "passed": 7,
+    "failed": 0,
+    "total": 7
+  }
+}

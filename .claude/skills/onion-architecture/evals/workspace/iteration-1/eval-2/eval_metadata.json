@@ -1,0 +1,13 @@
+{
+  "eval_id": 2,
+  "eval_name": "detect-core-purity-violations",
+  "prompt": "Review a shared contract (vendor/shared/contracts/notifications.ts) and a reviewer-core file (reviewer-core/src/enrich.ts) for wrong-layer / core-purity problems.",
+  "assertions": [
+    { "text": "Flags the contract importing fastify (FastifyRequest) — core-stays-pure", "type": "detection" },
+    { "text": "Flags the contract importing the db/schema Drizzle table — core-stays-pure", "type": "detection" },
+    { "text": "Flags the contract holding presentation logic (notificationFromRequest reading req.body)", "type": "detection" },
+    { "text": "Flags reviewer-core importing node:fs and node:child_process — core-no-node-io-builtins", "type": "detection" },
+    { "text": "Flags reviewer-core importing simple-git — core-no-io-libraries", "type": "detection" },
+    { "text": "Recommends passing file contents / commits in as arguments (keep the injected LLMProvider)", "type": "quality" }
+  ]
+}

@@ -1,0 +1,48 @@
+{
+  "eval_id": 1,
+  "config": "with_skill",
+  "expectations": [
+    {
+      "text": "Flags routes.ts querying the DB directly (route-no-direct-db)",
+      "passed": true,
+      "evidence": "Findings 1-3: names route-no-direct-db for the drizzle/db-schema imports and both inline queries."
+    },
+    {
+      "text": "Flags service new-ing concrete OctokitGitHubClient instead of container.github()",
+      "passed": true,
+      "evidence": "Finding 7: service-prefers-injected-adapters; fix uses `await this.container.github()`."
+    },
+    {
+      "text": "Flags service querying DB directly in countUnread (service-no-direct-db)",
+      "passed": true,
+      "evidence": "Findings 4-5: service-no-direct-db, pushes count into repo."
+    },
+    {
+      "text": "Flags service importing sibling agents/repository.js (no-cross-module-internals)",
+      "passed": true,
+      "evidence": "Finding 6: names no-cross-module-internals, notes dead code, suggests container.agentsRepo."
+    },
+    {
+      "text": "Flags repository importing from adapters/ (repository-no-adapters)",
+      "passed": true,
+      "evidence": "Finding 8: repository-no-adapters on renderMarkdown import."
+    },
+    {
+      "text": "Flags repository deleteById missing workspaceId predicate (tenancy)",
+      "passed": true,
+      "evidence": "Finding 10: workspace guard, cross-tenant delete."
+    },
+    {
+      "text": "Does NOT falsely flag db/rows row-type imports or pure helpers.ts",
+      "passed": true,
+      "evidence": "'Looks suspicious but is actually fine' section explicitly clears db/rows imports and helpers.ts, citing the carve-out."
+    }
+  ],
+  "notes": "7/7. Differentiator vs baseline: cites exact dependency-cruiser rule names, the db/rows carve-out, thin-module grandfathering, and the known-warn baseline + verify command.",
+  "summary": {
+    "pass_rate": 1.0,
+    "passed": 7,
+    "failed": 0,
+    "total": 7
+  }
+}

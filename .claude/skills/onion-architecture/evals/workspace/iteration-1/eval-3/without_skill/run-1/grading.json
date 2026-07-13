@@ -1,0 +1,43 @@
+{
+  "eval_id": 3,
+  "config": "without_skill",
+  "expectations": [
+    {
+      "text": "Proposes the layered split modules/webhooks/{routes.ts, service.ts, repository.ts}",
+      "passed": false,
+      "evidence": "Invents a per-module domain/application/infrastructure/presentation SUBFOLDER tree (webhook.entity.ts, webhook.pg.repository.ts, etc.) \u2014 the layers are conceptually right but the file structure does not match DevDigest's flat routes/service/repository house style."
+    },
+    {
+      "text": "Routes = Zod + getContext + delegate; Service orchestrates + workspaceId first",
+      "passed": false,
+      "evidence": "Uses req.workspace.id and manual CreateWebhookRequest.parse(req.body) instead of getContext + the Fastify Zod schema provider; service workspaceId-first is correct but the route pattern is wrong for this codebase."
+    },
+    {
+      "text": "Repository is the only place with Drizzle, every where() workspace-scoped",
+      "passed": true,
+      "evidence": "PgWebhookRepository is the only Drizzle code; every query uses and(eq(workspaceId), ...)."
+    },
+    {
+      "text": "GitHub call via GitHubClient interface from container.github(), NOT new OctokitGitHubClient()",
+      "passed": false,
+      "evidence": "Fabricates its own GithubWebhookPort + GithubWebhookAdapter and a non-existent gh.forWorkspace(workspaceId); never identifies the existing GitHubClient interface / container.github(). Correct DI instinct, wrong (invented) mechanism."
+    },
+    {
+      "text": "New table in db/schema/*.ts + pnpm db:generate (no hand-written migration)",
+      "passed": true,
+      "evidence": "Defines Drizzle table, generates migration (db:generate), explicitly says never hand-write/edit migrations."
+    },
+    {
+      "text": "Shared shapes as Zod contracts in vendor/shared/contracts (both copies); register one line in modules/index.ts",
+      "passed": false,
+      "evidence": "Contracts location hand-waved ('commonly @shared/*'), misses the two-copy vendored @devdigest/shared; registration invents registerWebhooksModule + a registerModules(app, deps) function instead of the real one-line entry in the modules Record."
+    }
+  ],
+  "notes": "2/6. Textbook clean-architecture plan that diverges from DevDigest house style on nearly every wiring decision \u2014 would not pass review as-is. CLAUDE.md gave it the generic conventions (ESM .js, static registration, do-not-touch), but not the layer/DI/container specifics the skill supplies.",
+  "summary": {
+    "pass_rate": 0.3333,
+    "passed": 2,
+    "failed": 4,
+    "total": 6
+  }
+}

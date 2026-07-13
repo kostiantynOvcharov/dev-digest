@@ -1,0 +1,43 @@
+{
+  "eval_id": 3,
+  "config": "with_skill",
+  "expectations": [
+    {
+      "text": "Proposes the layered split modules/webhooks/{routes.ts, service.ts, repository.ts}",
+      "passed": true,
+      "evidence": "Exactly the flat layered shape (+ helpers.ts), explicitly copies modules/agents/ and warns against thin modules."
+    },
+    {
+      "text": "Routes = Zod + getContext + delegate; Service orchestrates + workspaceId first",
+      "passed": true,
+      "evidence": "routes.ts uses getContext + Zod schema provider + delegate; service takes workspaceId first, threads to repo."
+    },
+    {
+      "text": "Repository is the only place with Drizzle, every where() workspace-scoped",
+      "passed": true,
+      "evidence": "Repository imports drizzle 'only here'; every where includes workspaceId; explains the workspace guard."
+    },
+    {
+      "text": "GitHub call via GitHubClient interface from container.github(), NOT new OctokitGitHubClient()",
+      "passed": true,
+      "evidence": "await this.container.github() returns GitHubClient; explicitly forbids importing/new-ing OctokitGitHubClient; extends existing interface + adapter + mocks."
+    },
+    {
+      "text": "New table in db/schema/*.ts + pnpm db:generate (no hand-written migration)",
+      "passed": true,
+      "evidence": "Adds table to db/schema, row type in db/rows.ts, runs pnpm db:generate, do-not-touch db/migrations."
+    },
+    {
+      "text": "Shared shapes as Zod contracts in vendor/shared/contracts (both copies); register one line in modules/index.ts",
+      "passed": true,
+      "evidence": "Contracts in vendor/shared/contracts x2 lock-step; registers with one import + one entry in the real modules Record."
+    }
+  ],
+  "notes": "6/6. Plan is directly executable against the real codebase; every DevDigest-specific wiring detail is correct.",
+  "summary": {
+    "pass_rate": 1.0,
+    "passed": 6,
+    "failed": 0,
+    "total": 6
+  }
+}
