@@ -42,6 +42,8 @@ export interface EvalRecord {
   git_sha: string;
   dirty: boolean;
   config: string;
+  /** Set by `eval:repeat` to attribute a record to a specific repeat invocation (isolation). */
+  run_tag?: string;
   nodeid: string;
   label: string;
   outcome: boolean;

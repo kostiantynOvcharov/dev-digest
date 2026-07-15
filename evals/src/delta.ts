@@ -63,12 +63,31 @@ function main(): void {
   console.log(`A = ${labelA}  sha ${a.git_sha}${a.dirty ? "-dirty" : ""}  (${a.times} runs)`);
   console.log(`B = ${labelB}  sha ${b.git_sha}${b.dirty ? "-dirty" : ""}  (${b.times} runs)`);
 
-  const nodeids = [...new Set([...Object.keys(a.tests), ...Object.keys(b.tests)])].sort();
+  // Align on the trailing test-name segment, not the full nodeid. A full nodeid embeds the eval
+  // file path AND the describe prefix (e.g. `agent:architecture-reviewer` vs `…-lite`), so a
+  // cross-artifact A/B — two different agents/skills graded on the same case names — would never
+  // line up. The trailing segment is the `test()` name, which such a pair deliberately shares, so
+  // keying on it makes the per-practice diff work. Same-file baseline/candidate still aligns (the
+  // trailing name is identical there too). Collisions (two distinct cases with the same trailing
+  // name in one series) resolve last-wins and are surfaced as a warning.
+  const shortKey = (id: string) => id.split(" > ").slice(-1)[0];
+  const byShort = (tests: Record<string, NodeAggregate>, label: string) => {
+    const out: Record<string, NodeAggregate> = {};
+    for (const [id, agg] of Object.entries(tests)) {
+      const k = shortKey(id);
+      if (out[k]) console.error(`${DIM}warn: '${label}' has two cases named "${k}" — last wins${RESET}`);
+      out[k] = agg;
+    }
+    return out;
+  };
+  const aShort = byShort(a.tests, labelA);
+  const bShort = byShort(b.tests, labelB);
+
+  const nodeids = [...new Set([...Object.keys(aShort), ...Object.keys(bShort)])].sort();
   for (const id of nodeids) {
-    const ta = a.tests[id];
-    const tb = b.tests[id];
-    const shortId = id.split(" > ").slice(-1)[0];
-    rateRow("\n  ", shortId, ta?.pass, tb?.pass);
+    const ta = aShort[id];
+    const tb = bShort[id];
+    rateRow("\n  ", id, ta?.pass, tb?.pass);
 
     const practiceTexts = [...new Set([...Object.keys(ta?.practices ?? {}), ...Object.keys(tb?.practices ?? {})])];
     for (const text of practiceTexts) {

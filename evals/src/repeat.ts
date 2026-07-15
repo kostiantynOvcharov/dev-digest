@@ -92,14 +92,20 @@ async function main(): Promise<void> {
   }
   vitestArgs.splice(0, vitestArgs.length, ...resolveEvalPatterns(vitestArgs));
 
+  // Unique per invocation. Forwarded to every vitest child (EVAL_RUN_TAG → stamped on each record)
+  // so we attribute records by tag, not by line offset into the shared log — which would otherwise
+  // slurp in any other eval process writing concurrently (a dependency-checker run, another repeat).
+  const runTag = `repeat-${process.pid}-${Date.now()}`;
+  const mine = (rs: ReturnType<typeof loadRecords>) => rs.filter((r) => r.run_tag === runTag);
+
   const startLine = recordCount();
   let line = startLine;
   const nCases = countTests(vitestArgs);
   console.log(`\nRepeat: ${vitestArgs.join(" ")}`);
   console.log(`  ${nCases ?? "?"} test case(s) × ${times} runs  (full traces in results/outputs/)\n`);
   for (let i = 1; i <= times; i++) {
-    const captured = await runVitestOnce(`run ${i}/${times}`, vitestArgs);
-    const fresh = loadRecords(line);
+    const captured = await runVitestOnce(`run ${i}/${times}`, vitestArgs, { EVAL_RUN_TAG: runTag });
+    const fresh = mine(loadRecords(line));
     line = recordCount();
     if (fresh.length === 0) {
       console.log(`  run ${i}/${times}  ${RED}no records — run crashed${RESET}`);
@@ -111,7 +117,7 @@ async function main(): Promise<void> {
     console.log(`  run ${i}/${times}  ${mark} ${passed}/${fresh.length} cases`);
   }
 
-  const records = loadRecords(startLine);
+  const records = mine(loadRecords(startLine));
   const tests = aggregate(records);
   const nodeids = Object.keys(tests).sort();
 

@@ -21,6 +21,10 @@ const OUTPUTS = join(RESULTS_DIR, "outputs");
 
 // One id per process (per vitest run), same format as the trend reporter.
 const RUN_ID = new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "");
+// Set by `eval:repeat` per invocation and forwarded to every vitest child. Stamped into each row
+// so repeat can attribute records to ITS OWN runs, instead of slicing the shared append-only log
+// by line offset (which slurps in any other eval process writing concurrently).
+const RUN_TAG = process.env.EVAL_RUN_TAG;
 const { sha: GIT_SHA, dirty: DIRTY } = gitInfo();
 
 const slugify = (s: string): string =>
@@ -64,6 +68,7 @@ export function record(label: string, data: RecordData): void {
     git_sha: GIT_SHA,
     dirty: DIRTY,
     config: EVAL_CONFIG,
+    run_tag: RUN_TAG,
     nodeid,
     label,
     outcome,

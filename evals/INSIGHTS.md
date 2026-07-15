@@ -1,0 +1,35 @@
+# Insights — evals
+
+Non-obvious findings and gotchas. Add an entry whenever something surprised you,
+so the next agent/session doesn't relearn it. Append-only — see the
+`engineering-insights` skill for how entries are captured.
+
+## What Works
+
+- **2026-07-15** — To A/B two *different* artifacts (e.g. a strict agent vs a relaxed variant) rather than artifact-on/off, give each its own `*.eval.ts` + `describeAgent(name)` but have both `import { cases }` from ONE shared `.cases.ts`, so the two agents are graded on identical prompts/practices/thresholds. Run `eval:repeat` on each with a distinct `--label`, then `eval:delta`. Evidence: `agents/architecture-reviewer-lite/architecture-reviewer-lite.eval.ts` reuses `architecture-reviewer/architecture-reviewer.cases.ts`.
+- **2026-07-15** — You can recover a clean A/B from a contaminated `results/repeat-*.json` WITHOUT re-running any model: the raw rows survive in `results/records.jsonl` tagged by `run_id`, and the `repeat-*.json` `tests` object is keyed by full nodeid — filter its keys (e.g. `.includes("architecture-reviewer")`) and re-run `eval:delta`. Saves the token cost of a re-run when only the aggregation was polluted.
+
+## What Doesn't Work
+
+- **2026-07-15** — `eval:repeat` originally attributed "its" records by LINE OFFSET into the shared append-only `results/records.jsonl` (`loadRecords(startLine)`), so ANY other eval process writing concurrently leaked into the labeled series. A parallel `dependency-checker` run (separate `run_id`, timestamped mid-window) dumped 5 of its cases into `repeat-strict.json` and 2 into `repeat-lite.json`, and `delta` then rendered them as noise rows. Fix: tag each repeat invocation (`EVAL_RUN_TAG=repeat-<pid>-<ts>`), forward it to every vitest child, stamp `run_tag` on each record, and filter by tag instead of offset. Lesson: a shared global log + line-offset windowing is not concurrency-safe. Evidence: `src/repeat.ts` (runTag/`mine()`), `src/records/record.ts` (`RUN_TAG`).
+- **2026-07-15** — `eval:delta` aligns two series by FULL nodeid, which is `${testPath} > ${describePrefix} > ${testName}` (`src/records/record.ts:45`). A cross-artifact A/B differs in BOTH the file path AND the describe prefix (`agent:architecture-reviewer` vs `…-lite`), so the union of keys is disjoint and every practice renders one-sided (`100% -> —%`) — the promised "which practice moved" never lines up. Fix: key delta on the trailing `" > "` segment (the `test()` name, deliberately shared by an A/B pair); same-file baseline/candidate still aligns since the trailing name is identical there too. Evidence: `src/delta.ts` (`shortKey`/`byShort`).
+
+## Codebase Patterns
+
+- **2026-07-15** — `agentTask`/`runAgentCases(name, …)` load the agent-under-test from **repo-root** `.claude/agents/<name>.md` by that exact `name` (not the eval directory name) and inject its frontmatter-stripped body as the system prompt. The agent's declared `tools:` are honored (mutating tools — Write/Edit/Bash/NotebookEdit — are stripped, `*` collapses to Read/Grep/Glob), but its `model:` frontmatter is IGNORED: every run uses `EVAL_MODEL` (default `claude-haiku-4-5`), judged by `EVAL_JUDGE_MODEL` (default `claude-sonnet-5`). So a missing/misnamed agent file fails only at run time with `agent not found`, and setting `model:` on the agent has no effect on the eval. Evidence: `src/artifacts/load.ts` (`agentContent`/`agentTools`), `src/tasks.ts` (`agentTask`), `src/runtime/run-claude.ts`, `src/config.ts`.
+- **2026-07-15** — `architecture-reviewer` / `architecture-reviewer-lite` are **eval-only** A/B agents, NOT wired into production (the production reviewer is `arch-reviewer`). `-lite` is byte-for-byte the strict variant minus two output-discipline hard rules: (1) cite the documented rule id per finding (+ the "drop a finding you can't map to a rule" clause that rides with it), (2) quote the offending line verbatim. The cases pair a TEXTBOOK-violation diff (non-discriminating — the model volunteers `inward-only-dependencies`/`di-discipline` even without the rule) with a DevDigest-SPECIFIC diff (`reviewer-core-zero-io`, `reviewer-core-ground-findings-gate`) that only the citation rule reliably surfaces; that is why removing citation shows 100→0 on reviewer-core but 100→100 on checkout. Evidence: `.claude/agents/architecture-reviewer*.md`, `agents/architecture-reviewer/architecture-reviewer.cases.ts`.
+
+## Tool & Library Notes
+
+- **2026-07-15** — `eval:repeat` hard-caps `-n` at 2 (`MAX_TIMES`, token economy) — pass more and it silently clamps. A bare directory arg like `agents/architecture-reviewer` is a vitest SUBSTRING that also matches `agents/architecture-reviewer-lite/…`; `resolveEvalPatterns` guards this by expanding a dir arg to its exact `.eval.ts` file paths, but ONLY if the arg resolves as a directory relative to the repeat process cwd — so invoke via `pnpm -C evals eval:repeat agents/<name>` (cwd = evals), not from repo root, or the expansion silently no-ops and the A/B doubles up. Evidence: `src/repeat.ts` (`MAX_TIMES`, `resolveEvalPatterns`).
+
+## Recurring Errors & Fixes
+
+## Session Notes
+
+### 2026-07-15
+- Built a controlled A/B for the architecture reviewer: created eval-only `architecture-reviewer` (strict) and `architecture-reviewer-lite` agents (the two `*.eval.ts` + shared `.cases.ts` + fixtures were already committed but the agent artifacts were missing, so the evals would have failed with `agent not found`).
+- Fixed two framework gaps surfaced by the A/B: `delta` now aligns on the trailing test-name segment (cross-artifact A/B), and `repeat` now isolates its records by a per-invocation `run_tag` instead of a line offset into the shared log.
+- A/B result (haiku under test, sonnet judge, n=2): removing the citation rule collapsed DevDigest-specific rule-id naming 100→0 but left textbook rule naming untouched; removing the verbatim rule degraded evidence 100→50; fabrication-resistance on an out-of-scope diff dropped 100→50; detection, severity, and the PASS/FAIL gate were unaffected.
+
+## Open Questions
