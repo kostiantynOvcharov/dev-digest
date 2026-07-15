@@ -1,80 +1,80 @@
 import type { WorkflowCase } from "../src/index.js";
 
 /**
- * Systemic ("workflow") tier — asserts the real on-disk harness (CLAUDE.md + skills + subagents,
- * loaded via settingSources:["project"]) behaves as documented. Organized by scenario, not by a
- * single artifact, because these behaviors are cross-cutting.
+ * Systemic ("workflow") tier — asserts the on-disk harness (CLAUDE.md + skills, loaded via
+ * settingSources:["project"]) routes an agent the way the CLAUDE.md files document. Every
+ * expectation below is grounded in a file that EXISTS in the repo today (verified), so a red
+ * result means the harness misbehaved, not that the fixture is missing.
  *
- * Budget: 5 Claude sessions total.
- *   - 3 × trace     → 1 session each                      = 3
- *   - 1 × activation pair (positive + near-miss negative) = 2
+ * Budget: 4 Claude sessions total.
+ *   - 3 × trace              → 1 session each = 3
+ *   - 1 × activation positive → 1 session     = 1
  *
- * `trace` folds several assertions into ONE session (cheaper, coarser) and stops early once its
- * evidence is in — so a dispatch-bearing trace never waits out the nested subagent's full run.
+ * No near-miss negative for onion-architecture: that skill's own description lists the bare topic
+ * ("Trigger terms: onion architecture, layering, …") as a trigger, so a pure-explanation prompt is
+ * IN-scope by design and can't serve as a near-miss. A run confirmed it activates on "explain onion
+ * architecture in general" — correct per its description, so only the positive is asserted here.
+ *
+ * Scope note: these test CLAUDE.md's *routing/activation* rules (which doc, which skill), NOT
+ * doc content. `trace` folds the assertions into one session and stops early once the evidence
+ * is in.
  */
 export const cases: WorkflowCase[] = [
-  // --- trace (1 session): CLAUDE.md "Read When" routing + subagent dispatch, together -----------
+  // --- B1: root CLAUDE.md "Session protocol" — read the package INSIGHTS.md before touching it --
   {
     kind: "trace",
-    // Endpoint must NOT already exist, or the model reviews the existing code inline instead of
-    // planning-then-dispatching. GET /reviews/:id/export is genuinely absent from routes.ts.
-    name: "API-route task reads api-contracts AND pulls the architecture-reviewer",
+    // The most distinctive rule in this repo: "Start: before touching a package, read its
+    // INSIGHTS.md and summarize the top 3". Prompt must push toward STARTING WORK ON THE PACKAGE
+    // per repo conventions, not toward a code question — otherwise the model dives into source
+    // and never runs the protocol. reviewer-core/INSIGHTS.md exists.
+    name: "session protocol reads reviewer-core INSIGHTS before touching the package",
     prompt:
-      "Я планую додати НОВИЙ, ще не реалізований ендпоінт GET /reviews/:id/export (віддає ревʼю як " +
-      "markdown). Спершу звірся з конвенціями API цього репо. Потім ОБОВʼЯЗКОВО запусти сабагента " +
-      "architecture-reviewer, щоб він оцінив мій план на відповідність onion-шарам — не рецензуй сам.",
-    expectFilesRead: ["server/docs/api-contracts.md"],
-    expectSubagents: ["architecture-reviewer"],
+      "Я збираюся вносити зміни в пакет reviewer-core. За настановами цього репо (CLAUDE.md), " +
+      "що треба зробити ПЕРШ, ніж торкатися пакета? Виконай цей крок для reviewer-core.",
+    expectFilesRead: ["reviewer-core/INSIGHTS.md"],
+    maxTurns: 6,
+  },
+
+  // --- A1: root CLAUDE.md "Agent prompt templates -> docs/agent-prompts/" ------------------------
+  {
+    kind: "trace",
+    // Routing + selection: the rule points at the directory; a security-review ask should land on
+    // the specific template. docs/agent-prompts/security-reviewer.md exists. Prompt asks for the
+    // TEMPLATE (a repo artifact), not "how do I review for security" (a knowledge question that
+    // would pull the `security` skill instead).
+    name: "security-review prompt-template task routes to docs/agent-prompts",
+    prompt:
+      "Мені потрібен готовий шаблон промпту для агента security-рев'ю в цьому репо. За настановами " +
+      "репо, де лежать такі шаблони промптів? Знайди і прочитай саме файл для security-reviewer.",
+    expectFilesRead: ["docs/agent-prompts/security-reviewer.md"],
+    maxTurns: 6,
+  },
+
+  // --- A2: server/CLAUDE.md "Indexer internals -> repo-intel/README.md" -------------------------
+  {
+    kind: "trace",
+    // Two-hop routing: root CLAUDE.md ("Working inside a package -> package CLAUDE.md") then
+    // server/CLAUDE.md ("Indexer internals -> server/src/modules/repo-intel/README.md"). Phrase
+    // as a CONSULT-THE-DOCS ask about the indexer, not "read the indexer code".
+    name: "backend indexer task follows server CLAUDE.md to repo-intel README",
+    prompt:
+      "Хочу зрозуміти, як на бекенді влаштований індексатор репозиторію (repo-intel). Перш ніж " +
+      "лізти в код — звірся з настановами репо, який документ це пояснює, і прочитай саме його.",
+    expectFilesRead: ["server/src/modules/repo-intel/README.md"],
     maxTurns: 8,
   },
 
-  // --- trace (1 session): two "Read When" rows at once -----------------------------------------
-  {
-    kind: "trace",
-    // Tests the CLAUDE.md "Read When" routing, so the prompt must push toward CONSULTING the docs,
-    // not exploring source. Earlier phrasing ("розберись, як усе влаштовано") sent the model straight
-    // into schema.ts / pipeline.run.ts and it never opened the routed doc. One anchor doc (pipeline.md)
-    // keeps this a deterministic routing check — asserting two docs in one session is inherently flaky.
-    name: "pipeline task follows CLAUDE.md routing to pipeline.md",
-    prompt:
-      "Я збираюся змінити review pipeline. Перш ніж торкатися коду — звірся з настановами цього репо " +
-      "(CLAUDE.md) щодо того, яку документацію треба прочитати для змін у pipeline, і прочитай саме ці документи.",
-    expectFilesRead: ["reviewer-core/docs/pipeline.md"],
-    maxTurns: 8,
-  },
-
-  // --- trace (1 session): CLAUDE.md "Hit unexpected behavior" routing -> gotchas ----------------
-  // Was a contrast case, but the control run (empty tmpdir) could still reach the real repo by
-  // absolute path and read gotchas.md, making the negative flaky. As a single-session trace it
-  // reliably checks the same routing rule: in the real repo, the discovery prompt reads gotchas.md.
-  {
-    kind: "trace",
-    name: "CLAUDE.md routes a gotchas lookup to reviewer-core/insights",
-    prompt:
-      "У reviewer-core я стикнувся з несподіваною поведінкою — щось працює не так, як я очікував. " +
-      "За настановами цього репо, де це вже могло бути задокументовано? Прочитай той файл.",
-    expectFilesRead: ["reviewer-core/insights/gotchas.md"],
-    maxTurns: 5,
-  },
-
-  // --- activation pair (2 sessions): positive + near-miss negative ------------------------------
+  // --- C1: activation pair — CLAUDE.md "Use the onion-architecture skill before ... a module" ---
   {
     kind: "activation",
-    name: "engineering-insights activates on a genuine discovery",
+    // Positive: a concrete "where does this code go across layers" ask for a NEW backend module —
+    // exactly what server/reviewer-core CLAUDE.md tell the agent to reach the skill for.
+    name: "onion-architecture activates when placing a new backend module across layers",
     prompt:
-      "Щойно з'ясував, чому pgvector-запит повертав нуль рядків — розмірність колонки не збіглася " +
-      "після зміни моделі ембедингів. Хочу це зафіксувати, щоб більше не наступати.",
-    skill: "engineering-insights",
+      "Додаю новий backend-модуль для експорту рев'ю. Куди по шарах покласти route, service і " +
+      "repository, і як правильно зареєструвати залежності через DI-контейнер?",
+    skill: "onion-architecture",
     shouldActivate: true,
-    maxTurns: 4,
-  },
-  {
-    kind: "activation",
-    name: "near-miss negative — explaining the same topic must NOT record an insight",
-    prompt:
-      "Поясни, як у pgvector працюють розмірності колонок і чому невідповідність повертає нуль рядків.",
-    skill: "engineering-insights",
-    shouldActivate: false,
-    maxTurns: 4,
+    maxTurns: 5,
   },
 ];
