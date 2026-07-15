@@ -1,0 +1,105 @@
+# Harness evals — AGENTS tier (tool-using subagents).
+#
+# Fires only when a subagent definition (or its evals) changes. Detects WHICH agents changed, runs
+# just those that have written evals, and prints "SKIP" for changed agents with no evals.
+#
+# Tool tier: agentTask runs inside the Claude Agent SDK (the agent really uses Read/Grep/Glob), which
+# speaks the Anthropic wire protocol — so a non-Anthropic model must go through the bundled LiteLLM
+# translating proxy. The proxy is brought up ONLY when there is something to run.
+#
+# Default model is Gemini Flash: verified reliable for tool tiers, whereas DeepSeek can under-call
+# tools. Switch to DeepSeek (or anything) per manual run via the workflow_dispatch inputs.
+name: eval-agents
+
+on:
+  pull_request:
+    paths:
+      - '.claude/agents/**'
+      - 'evals/agents/**'
+      - '.github/workflows/eval-agents.yml'
+  workflow_dispatch:
+    inputs:
+      eval_model:
+        description: 'Model under test (OpenRouter slug)'
+        default: 'google/gemini-2.5-flash'
+      judge_model:
+        description: 'Judge model (OpenRouter slug)'
+        default: 'google/gemini-2.5-flash'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eval-agents-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  agents:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: evals
+    env:
+      EVAL_BACKEND: openrouter
+      OPENROUTER_BASE_URL: http://localhost:4000    # the LiteLLM proxy
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      EVAL_MODEL: ${{ inputs.eval_model || 'google/gemini-2.5-flash' }}
+      EVAL_JUDGE_MODEL: ${{ inputs.judge_model || 'google/gemini-2.5-flash' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: evals/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+
+      - name: Detect changed agents
+        id: detect
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ -n "$BASE_SHA" ]; then
+            CHANGED_FILES="$(git diff --name-only "$BASE_SHA...$HEAD_SHA")"
+          else
+            CHANGED_FILES=""
+          fi
+          export CHANGED_FILES
+          node scripts/ci-detect.mjs
+
+      # --- proxy: only spin it up when there is work to do (changed agents, or a manual run) ---
+      - name: Start LiteLLM proxy
+        if: steps.detect.outputs.agents_paths != '' || github.event_name == 'workflow_dispatch'
+        run: docker compose -f proxy/docker-compose.yml up -d   # OPENROUTER_API_KEY from job env
+      - name: Wait for proxy
+        if: steps.detect.outputs.agents_paths != '' || github.event_name == 'workflow_dispatch'
+        run: pnpm proxy:wait
+
+      - name: Run agent evals (or skip)
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          PATHS="${{ steps.detect.outputs.agents_paths }}"
+          # Tool tiers flake under OpenRouter load — run sequentially with one retry.
+          if [ -n "$PATHS" ]; then
+            echo "Running agent evals: $PATHS"
+            pnpm eval --retry=1 --no-file-parallelism $PATHS
+          elif [ "$EVENT" = "workflow_dispatch" ]; then
+            echo "Manual run (no PR diff) — running the full agents tier."
+            pnpm eval:agents --retry=1 --no-file-parallelism
+          else
+            echo "SKIP — no changed agents have evals; nothing to run."
+          fi
+
+      - name: Proxy logs on failure
+        if: failure() && (steps.detect.outputs.agents_paths != '' || github.event_name == 'workflow_dispatch')
+        run: docker compose -f proxy/docker-compose.yml logs --tail 100
+      - name: Stop proxy
+        if: always() && (steps.detect.outputs.agents_paths != '' || github.event_name == 'workflow_dispatch')
+        run: docker compose -f proxy/docker-compose.yml down

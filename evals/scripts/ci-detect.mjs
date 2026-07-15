@@ -11,8 +11,13 @@
  * A changed artifact with NO written evals is NOT a failure: it is reported on the `skipped_*`
  * outputs so the job can print a visible "SKIP <name> (no evals)" line instead of going red.
  *
- * Emits GitHub Actions step outputs (skills, agents, run_workflow, skipped_skills, skipped_agents)
- * to $GITHUB_OUTPUT. Pure filesystem + string work — no deps.
+ * Emits GitHub Actions step outputs to $GITHUB_OUTPUT:
+ *   skills / agents            — JSON arrays of changed artifact names that HAVE evals
+ *   skills_paths / agents_paths — the same, as a space-joined vitest path list ready to pass to
+ *                                 `pnpm eval` (e.g. "skills/foo skills/bar"); empty string = skip
+ *   run_workflow               — "true"/"false": run the workflow tier
+ *   skipped_skills / skipped_agents — changed artifacts with NO evals (reported, not failed)
+ * Pure filesystem + string work — no deps.
  */
 
 import { existsSync, readdirSync, appendFileSync } from "node:fs";
@@ -60,9 +65,12 @@ const skippedAgents = agentNames.filter((n) => !hasEvals("agents", n));
 
 // The workflow tier measures the LIVE harness, so anything that changes it re-triggers it:
 // the root or .claude CLAUDE.md, any agent definition, the workflow cases, or the engine itself.
+// CLAUDE.md is a symlink to AGENTS.md, so a real edit to the guide shows up as AGENTS.md in the
+// diff — watch both, or an agent-guide change silently skips the workflow tier.
 const runWorkflow = changed.some(
   (f) =>
     f === "CLAUDE.md" ||
+    f === "AGENTS.md" ||
     f === ".claude/CLAUDE.md" ||
     /^\.claude\/agents\/.+\.md$/.test(f) ||
     /^evals\/workflow\//.test(f) ||
@@ -74,6 +82,9 @@ const write = (k, v) => (out ? appendFileSync(out, `${k}=${v}\n`) : console.log(
 
 write("skills", JSON.stringify(skills));
 write("agents", JSON.stringify(agents));
+// vitest-ready path lists so the workflow can `pnpm eval $paths` without parsing JSON in bash.
+write("skills_paths", skills.map((n) => `skills/${n}`).join(" "));
+write("agents_paths", agents.map((n) => `agents/${n}`).join(" "));
 write("run_workflow", String(runWorkflow));
 write("skipped_skills", skippedSkills.join(" "));
 write("skipped_agents", skippedAgents.join(" "));

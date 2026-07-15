@@ -1,0 +1,80 @@
+# Harness evals — WORKFLOW tier (systemic behaviour of the LIVE harness).
+#
+# Fires when anything that shapes the assembled harness changes: the agent guide (CLAUDE.md is a
+# symlink to AGENTS.md — watch both), any subagent definition, the workflow cases, or the eval
+# engine. Runs the whole workflow tier (skill activation, subagent dispatch, CLAUDE.md routing).
+# There is nothing to "skip" here — the workflow cases always exist.
+#
+# Tool tier via the Claude Agent SDK, so it goes through the LiteLLM proxy. Gemini Flash is REQUIRED,
+# not just recommended: DeepSeek / gpt-4.1-mini do the work inline instead of DISPATCHING the
+# subagent, so the dispatch assertions fail on them (see evals/README.md "Which cheap model").
+#
+# NOTE: `activation` cases are indicative (not blocking) on non-Anthropic models — a capable model
+# may perform the action directly instead of invoking the Skill tool. Keep this check NON-required
+# in branch protection; keep eval-skills / eval-agents required.
+name: eval-workflow
+
+on:
+  pull_request:
+    paths:
+      - 'CLAUDE.md'
+      - 'AGENTS.md'
+      - '.claude/agents/**'
+      - 'evals/workflow/**'
+      - 'evals/src/**'
+      - '.github/workflows/eval-workflow.yml'
+  workflow_dispatch:
+    inputs:
+      eval_model:
+        description: 'Model under test (OpenRouter slug — must dispatch subagents; Gemini recommended)'
+        default: 'google/gemini-2.5-flash'
+      judge_model:
+        description: 'Judge model (OpenRouter slug)'
+        default: 'google/gemini-2.5-flash'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eval-workflow-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  workflow:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: evals
+    env:
+      EVAL_BACKEND: openrouter
+      OPENROUTER_BASE_URL: http://localhost:4000    # the LiteLLM proxy
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      EVAL_MODEL: ${{ inputs.eval_model || 'google/gemini-2.5-flash' }}
+      EVAL_JUDGE_MODEL: ${{ inputs.judge_model || 'google/gemini-2.5-flash' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: evals/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+
+      - name: Start LiteLLM proxy
+        run: docker compose -f proxy/docker-compose.yml up -d   # OPENROUTER_API_KEY from job env
+      - name: Wait for proxy
+        run: pnpm proxy:wait
+
+      - name: Run workflow evals
+        # Tool tier flakes under OpenRouter load — run sequentially with one retry.
+        run: pnpm eval:workflow --retry=1 --no-file-parallelism
+
+      - name: Proxy logs on failure
+        if: failure()
+        run: docker compose -f proxy/docker-compose.yml logs --tail 100
+      - name: Stop proxy
+        if: always()
+        run: docker compose -f proxy/docker-compose.yml down
