@@ -5,13 +5,14 @@
 # engine. Runs the whole workflow tier (skill activation, subagent dispatch, CLAUDE.md routing).
 # There is nothing to "skip" here — the workflow cases always exist.
 #
-# Tool tier via the Claude Agent SDK, so it goes through the LiteLLM proxy. Gemini Flash is REQUIRED,
-# not just recommended: DeepSeek / gpt-4.1-mini do the work inline instead of DISPATCHING the
-# subagent, so the dispatch assertions fail on them (see evals/README.md "Which cheap model").
+# MODEL: anthropic/claude-haiku-4.5. This tier asserts behaviour-shaped traces (the model must
+# INVOKE the Skill tool, HOP between docs, DISPATCH a subagent). Cheap non-Anthropic models are
+# "indicative, not blocking" here — on Gemini/DeepSeek the model tends to do the work inline
+# instead, so the tier is flaky (measured 2/4). Haiku is 4/4 green, so this stays a blocking gate.
 #
-# NOTE: `activation` cases are indicative (not blocking) on non-Anthropic models — a capable model
-# may perform the action directly instead of invoking the Skill tool. Keep this check NON-required
-# in branch protection; keep eval-skills / eval-agents required.
+# NO PROXY: anthropic/* slugs are served natively by OpenRouter's Anthropic Skin, so the Agent SDK
+# talks to https://openrouter.ai/api directly (env.ts default) — no LiteLLM translating proxy. If
+# you switch EVAL_MODEL to a non-Anthropic slug you must re-add the proxy (see eval-agents.yml).
 name: eval-workflow
 
 on:
@@ -26,11 +27,11 @@ on:
   workflow_dispatch:
     inputs:
       eval_model:
-        description: 'Model under test (OpenRouter slug — must dispatch subagents; Gemini recommended)'
-        default: 'google/gemini-2.5-flash'
+        description: 'Model under test (Anthropic OpenRouter slug — non-Anthropic slugs need the proxy)'
+        default: 'anthropic/claude-haiku-4.5'
       judge_model:
         description: 'Judge model (OpenRouter slug)'
-        default: 'google/gemini-2.5-flash'
+        default: 'anthropic/claude-haiku-4.5'
 
 permissions:
   contents: read
@@ -47,10 +48,10 @@ jobs:
         working-directory: evals
     env:
       EVAL_BACKEND: openrouter
-      OPENROUTER_BASE_URL: http://localhost:4000    # the LiteLLM proxy
+      # No OPENROUTER_BASE_URL: anthropic/* is served natively by the OpenRouter Anthropic Skin.
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-      EVAL_MODEL: ${{ inputs.eval_model || 'google/gemini-2.5-flash' }}
-      EVAL_JUDGE_MODEL: ${{ inputs.judge_model || 'google/gemini-2.5-flash' }}
+      EVAL_MODEL: ${{ inputs.eval_model || 'anthropic/claude-haiku-4.5' }}
+      EVAL_JUDGE_MODEL: ${{ inputs.judge_model || 'anthropic/claude-haiku-4.5' }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -63,18 +64,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
 
-      - name: Start LiteLLM proxy
-        run: docker compose -f proxy/docker-compose.yml up -d   # OPENROUTER_API_KEY from job env
-      - name: Wait for proxy
-        run: pnpm proxy:wait
-
       - name: Run workflow evals
-        # Tool tier flakes under OpenRouter load — run sequentially with one retry.
+        # Sequential + one retry to smooth any transient OpenRouter hiccup on the tool tier.
         run: pnpm eval:workflow --retry=1 --no-file-parallelism
-
-      - name: Proxy logs on failure
-        if: failure()
-        run: docker compose -f proxy/docker-compose.yml logs --tail 100
-      - name: Stop proxy
-        if: always()
-        run: docker compose -f proxy/docker-compose.yml down

@@ -32,11 +32,18 @@ const changed = (process.env.CHANGED_FILES ?? "")
   .map((s) => s.trim())
   .filter(Boolean);
 
+/** The exact evals/<tier>/<name>/*.eval.ts paths (repo-relative to evals/). */
+function evalFiles(tier, name) {
+  const dir = join(EVALS_DIR, tier, name);
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((f) => f.endsWith(".eval.ts"))
+    .map((f) => `${tier}/${name}/${f}`);
+}
+
 /** Does evals/<tier>/<name>/ contain at least one *.eval.ts? */
 function hasEvals(tier, name) {
-  const dir = join(EVALS_DIR, tier, name);
-  if (!existsSync(dir)) return false;
-  return readdirSync(dir).some((f) => f.endsWith(".eval.ts"));
+  return evalFiles(tier, name).length > 0;
 }
 
 /** Collect distinct artifact names touched under a `.claude` and/or `evals` prefix. */
@@ -49,6 +56,13 @@ function touched(reClaude, reEvals) {
   return [...names].sort();
 }
 
+// Eval-only A/B "B-side" agents whose evals are DELIBERATELY-failing measurement artifacts, not
+// pass/fail gates: e.g. `architecture-reviewer-lite` has the rule-citation requirement removed, so
+// the shared citation case (threshold 1.0) scores ~0.67 BY DESIGN. Its own description says "do not
+// wire it into production". Gating CI on it is a guaranteed red — so treat a change to one like a
+// no-evals skip and measure it manually (eval:repeat + eval:delta against its strict counterpart).
+const EVAL_ONLY_AGENTS = new Set(["architecture-reviewer-lite"]);
+
 const skillNames = touched(
   /^\.claude\/skills\/([^/]+)\//,
   /^evals\/skills\/([^/]+)\//,
@@ -60,8 +74,10 @@ const agentNames = touched(
 
 const skills = skillNames.filter((n) => hasEvals("skills", n));
 const skippedSkills = skillNames.filter((n) => !hasEvals("skills", n));
-const agents = agentNames.filter((n) => hasEvals("agents", n));
-const skippedAgents = agentNames.filter((n) => !hasEvals("agents", n));
+const gatedAgents = agentNames.filter((n) => !EVAL_ONLY_AGENTS.has(n));
+const evalOnlyAgents = agentNames.filter((n) => EVAL_ONLY_AGENTS.has(n));
+const agents = gatedAgents.filter((n) => hasEvals("agents", n));
+const skippedAgents = gatedAgents.filter((n) => !hasEvals("agents", n));
 
 // The workflow tier measures the LIVE harness, so anything that changes it re-triggers it:
 // the root or .claude CLAUDE.md, any agent definition, the workflow cases, or the engine itself.
@@ -83,8 +99,11 @@ const write = (k, v) => (out ? appendFileSync(out, `${k}=${v}\n`) : console.log(
 write("skills", JSON.stringify(skills));
 write("agents", JSON.stringify(agents));
 // vitest-ready path lists so the workflow can `pnpm eval $paths` without parsing JSON in bash.
-write("skills_paths", skills.map((n) => `skills/${n}`).join(" "));
-write("agents_paths", agents.map((n) => `agents/${n}`).join(" "));
+// Emit the EXACT *.eval.ts file paths, not the directory: a bare dir arg like
+// `agents/architecture-reviewer` is a vitest SUBSTRING that also matches
+// `agents/architecture-reviewer-lite/…`, silently re-running an excluded artifact.
+write("skills_paths", skills.flatMap((n) => evalFiles("skills", n)).join(" "));
+write("agents_paths", agents.flatMap((n) => evalFiles("agents", n)).join(" "));
 write("run_workflow", String(runWorkflow));
 write("skipped_skills", skippedSkills.join(" "));
 write("skipped_agents", skippedAgents.join(" "));
@@ -97,3 +116,5 @@ console.error(`agents → run  : ${agents.join(", ") || "(none)"}`);
 console.error(`workflow tier : ${runWorkflow ? "run" : "skip"}`);
 if (skippedSkills.length) console.error(`SKIP skills (no evals): ${skippedSkills.join(", ")}`);
 if (skippedAgents.length) console.error(`SKIP agents (no evals): ${skippedAgents.join(", ")}`);
+if (evalOnlyAgents.length)
+  console.error(`SKIP agents (eval-only A/B, measure manually): ${evalOnlyAgents.join(", ")}`);

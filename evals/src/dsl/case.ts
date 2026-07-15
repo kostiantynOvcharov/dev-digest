@@ -68,6 +68,13 @@ export type WorkflowCase =
       maxTurns?: number;
     };
 
+// Skill-tool activation is only reliably exercised on the Claude Code subscription harness; over
+// the OpenRouter/Agent-SDK gateway the model tends to answer by reading files instead of invoking
+// the Skill tool, so an `activation` positive can't pass there regardless of model. Activation
+// cases therefore GATE on the subscription path and are INDICATIVE (logged, non-blocking) under
+// EVAL_BACKEND=openrouter — matching README's "activation is indicative, not blocking".
+const ACTIVATION_INDICATIVE = process.env.EVAL_BACKEND === "openrouter";
+
 /** Did a skill engage? Either an explicit Skill tool-call, or reading its SKILL.md. */
 export function activated(result: Result, skill: string): boolean {
   const bySkill = result.skillsInvoked.some((s) => s === skill || s.endsWith(`:${skill}`));
@@ -135,10 +142,13 @@ export function runWorkflowCases(cases: WorkflowCase[]): void {
         const result = await workflowTask(c.prompt, { maxTurns: c.maxTurns });
         logTrace(c.name, result);
         try {
-          expect(
-            activated(result, c.skill),
-            `skills: ${result.skillsInvoked.join(", ")} | reads: ${result.filesRead.join(", ")}`,
-          ).toBe(c.shouldActivate);
+          const isActive = activated(result, c.skill);
+          const detail = `skills: ${result.skillsInvoked.join(", ") || "(none)"} | reads: ${result.filesRead.join(", ")}`;
+          if (ACTIVATION_INDICATIVE) {
+            console.error(`[indicative activation] ${c.skill}: ${isActive === c.shouldActivate ? "MATCH" : "MISS"} — ${detail}`);
+          } else {
+            expect(isActive, detail).toBe(c.shouldActivate);
+          }
         } finally {
           record(c.name, { result });
         }

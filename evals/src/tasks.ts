@@ -11,7 +11,7 @@
 import { IS_BASELINE, WORKFLOW_ALLOWED_TOOLS } from "./config.js";
 import { runClaude, type RunOptions } from "./runtime/run-claude.js";
 import { runContent } from "./runtime/dispatch.js";
-import { skillContent, agentContent, agentTools } from "./artifacts/load.js";
+import { skillContent, agentContent, agentTools, MUTATING_TOOLS } from "./artifacts/load.js";
 
 /**
  * Run a prompt with a skill's content injected (the 'candidate' condition). Under
@@ -36,7 +36,11 @@ export function skillTask(prompt: string, skillName: string, opts: RunOptions = 
 export function agentTask(prompt: string, agentName: string, opts: RunOptions = {}) {
   const systemPrompt = IS_BASELINE ? undefined : agentContent(agentName);
   const allowedTools = agentTools(agentName);
-  return runClaude(prompt, { allowedTools, ...opts, systemPrompt });
+  // Deny mutating tools at the SDK level too — agentTools strips them from the ALLOW-list, but
+  // bypassPermissions lets a built-in like Bash back in, so the agent would otherwise shell out
+  // to arch:check/git on the live repo (unsafe, and only green where deps happen to be installed).
+  const disallowedTools = [...MUTATING_TOOLS];
+  return runClaude(prompt, { allowedTools, disallowedTools, ...opts, systemPrompt });
 }
 
 /**
@@ -50,6 +54,9 @@ export function agentTask(prompt: string, agentName: string, opts: RunOptions = 
 export function workflowTask(prompt: string, opts: RunOptions = {}) {
   return runClaude(prompt, {
     allowedTools: WORKFLOW_ALLOWED_TOOLS,
+    // Deny mutating tools at the SDK level: WORKFLOW_ALLOWED_TOOLS omits them, but bypassPermissions
+    // otherwise lets Bash/Write back in against the LIVE project checkout (settingSources:["project"]).
+    disallowedTools: [...MUTATING_TOOLS],
     ...opts,
     settingSources: ["project"],
   });

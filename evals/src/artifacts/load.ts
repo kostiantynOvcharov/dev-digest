@@ -40,7 +40,7 @@ export function agentContent(agentName: string): string {
 // Tools the eval refuses to hand a subagent: evals run with bypassPermissions against the LIVE
 // repo, so a mutating tool could take real actions. An agent that declares these still runs — it
 // just runs read-only, which is all an eval ever needs.
-const MUTATING_TOOLS = new Set(["Write", "Edit", "NotebookEdit", "Bash"]);
+export const MUTATING_TOOLS = new Set(["Write", "Edit", "NotebookEdit", "Bash"]);
 const READONLY_FALLBACK = ["Read", "Grep", "Glob"];
 
 /**

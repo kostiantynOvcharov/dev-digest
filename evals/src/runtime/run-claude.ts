@@ -31,6 +31,14 @@ export interface Result {
 export interface RunOptions {
   systemPrompt?: string;
   allowedTools?: string[];
+  /**
+   * Hard deny-list, enforced even under permissionMode:"bypassPermissions". allowedTools alone
+   * does NOT keep a built-in tool (e.g. Bash) out of a bypass session — the model can still call
+   * it — so mutating tools must be denied here to actually hold. Without this an agent-under-test
+   * shells out to `arch:check`/git on the LIVE repo, which is both unsafe and non-hermetic (it
+   * passes only where the target package's toolchain happens to be installed).
+   */
+  disallowedTools?: string[];
   maxTurns?: number;
   cwd?: string;
   model?: string;
@@ -62,9 +70,10 @@ export async function runClaude(prompt: string, opts: RunOptions = {}): Promise<
   const options: Options = {
     model: opts.model ?? EVAL_MODEL,
     maxTurns: opts.maxTurns ?? MAX_TURNS,
-    permissionMode: "bypassPermissions", // safe: evals only read/plan and tools are allow-listed
+    permissionMode: "bypassPermissions", // safe: evals only read/plan and tools are allow/deny-listed
     systemPrompt,
     allowedTools,
+    disallowedTools: opts.disallowedTools,
     cwd: opts.cwd ?? REPO_ROOT,
     // Default: do NOT load on-disk config — isolates the injected artifact. workflowTask overrides.
     settingSources: opts.settingSources ?? [],
