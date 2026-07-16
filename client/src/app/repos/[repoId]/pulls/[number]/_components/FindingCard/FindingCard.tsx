@@ -21,6 +21,7 @@ import type { FindingRecord, FindingActionKind } from "@devdigest/shared";
 import { SEV_COLOR, SEV_COLOR_FALLBACK } from "./constants";
 import { lineLabel } from "./helpers";
 import { githubBlobUrl } from "../../../../../../../lib/github-urls";
+import { useCreateEvalCase } from "../../../../../../../lib/hooks/eval";
 import { s } from "./styles";
 
 export function FindingCard({
@@ -60,6 +61,10 @@ export function FindingCard({
   const accepted = !!f.accepted_at;
   const dismissed = !!f.dismissed_at;
   const muted = accepted || dismissed;
+  // A finding becomes an eval case only once a reviewer has decided it. Derive
+  // this from props every render — never mirror it into state.
+  const decided = accepted || dismissed;
+  const createEvalCase = useCreateEvalCase();
 
   return (
     <div ref={rootRef} data-finding-id={f.id} style={{ ...s.card(!!focused, sevColor, muted), scrollMarginTop: 16 }}>
@@ -119,6 +124,16 @@ export function FindingCard({
             >
               {t("finding.dismiss")}
             </Button>
+            <Button
+              kind="ghost"
+              size="sm"
+              icon="FlaskConical"
+              aria-label={t("finding.turnIntoEvalCase")}
+              title={decided ? t("finding.turnIntoEvalCase") : t("finding.turnIntoEvalCaseHint")}
+              disabled={!decided || createEvalCase.isPending}
+              loading={createEvalCase.isPending}
+              onClick={() => createEvalCase.mutate(f.id)}
+            />
           </div>
         </div>
       )}

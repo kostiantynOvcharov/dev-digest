@@ -8,6 +8,12 @@ vi.mock("../../../../../../../lib/hooks/reviews", () => ({
   useFindingAction: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
+// FindingsPanel renders FindingCard, which calls useCreateEvalCase — mock it so
+// no QueryClient / network is needed for these smoke tests.
+vi.mock("../../../../../../../lib/hooks/eval", () => ({
+  useCreateEvalCase: () => ({ mutate: vi.fn(), isPending: false }),
+}));
+
 import { FindingsPanel } from "./FindingsPanel";
 
 afterEach(cleanup);
