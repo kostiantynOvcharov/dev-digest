@@ -42,6 +42,12 @@ export const EvalRunRecord = z.object({
   citation_accuracy: z.number().nullable(),
   duration_ms: z.number().int().nullable(),
   cost_usd: z.number().nullable(),
+  // Batch identifier shared by every per-case row of one "run all cases"
+  // execution, plus an immutable snapshot of the agent's version + system
+  // prompt AT RUN TIME (a later prompt edit never rewrites past runs).
+  run_group_id: z.string(),
+  agent_version: z.number().int(),
+  system_prompt: z.string(),
 });
 export type EvalRunRecord = z.infer<typeof EvalRunRecord>;
 
