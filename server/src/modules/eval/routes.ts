@@ -15,11 +15,13 @@ import { EvalService } from './service.js';
  *   POST   /eval-cases/:id        EvalCaseInput        → replace a case's editable fields
  *   DELETE /eval-cases/:id                             → delete a case
  *   POST   /agents/:id/eval-runs                       → run all of an agent's cases (hermetic)
+ *   GET    /agents/:id/eval-runs                       → run history grouped by run_group_id
+ *   GET    /eval-dashboard?owner_id                    → dashboard (workspace / per-agent)
+ *   GET    /eval-runs/compare?a&b                      → two run groups: deltas + prompts
  *
  * Full onion module (routes → service → repository). Every handler resolves
  * tenancy with `getContext` and delegates to `EvalService`; no SQL here. The
- * run + dashboard/compare endpoints are added by later units in `run.ts` /
- * `dashboard.ts` and registered below alongside these.
+ * read-only aggregation for the last three routes lives in `dashboard.ts`.
  */
 
 /** Body for "Turn into eval case": just the source finding id (the rest is derived). */
@@ -30,6 +32,12 @@ const ListCasesQuery = z.object({
   owner_kind: EvalOwnerKind,
   owner_id: z.string().uuid(),
 });
+
+/** Query for the dashboard: optional per-agent detail via `owner_id`. */
+const DashboardQuery = z.object({ owner_id: z.string().uuid().optional() });
+
+/** Query for comparing two run groups (each a `run_group_id`). */
+const CompareQuery = z.object({ a: z.string().uuid(), b: z.string().uuid() });
 
 export default async function evalRoutes(appBase: FastifyInstance) {
   const app = appBase.withTypeProvider<ZodTypeProvider>();
@@ -76,5 +84,25 @@ export default async function evalRoutes(appBase: FastifyInstance) {
   app.post('/agents/:id/eval-runs', { schema: { params: IdParams } }, async (req) => {
     const { workspaceId } = await getContext(app.container, req);
     return service.runEvals(workspaceId, req.params.id);
+  });
+
+  // ---- Run history for an agent, grouped by run_group_id (AC-11, AC-15) -----
+  // Tenancy at the boundary: workspaceId from getContext; the service 404s an
+  // agent outside the workspace (or a deleted one) — never a 500.
+  app.get('/agents/:id/eval-runs', { schema: { params: IdParams } }, async (req) => {
+    const { workspaceId } = await getContext(app.container, req);
+    return service.getRunHistory(workspaceId, req.params.id);
+  });
+
+  // ---- Eval dashboard: workspace overview, or per-agent detail (AC-11/AC-12) -
+  app.get('/eval-dashboard', { schema: { querystring: DashboardQuery } }, async (req) => {
+    const { workspaceId } = await getContext(app.container, req);
+    return service.getDashboard(workspaceId, req.query.owner_id);
+  });
+
+  // ---- Compare two run groups: deltas + stored prompt snapshots (AC-10) -----
+  app.get('/eval-runs/compare', { schema: { querystring: CompareQuery } }, async (req) => {
+    const { workspaceId } = await getContext(app.container, req);
+    return service.compareRuns(workspaceId, req.query.a, req.query.b);
   });
 }

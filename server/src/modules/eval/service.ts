@@ -1,8 +1,19 @@
-import type { EvalCase, EvalCaseInput, EvalOwnerKind, EvalRun } from '@devdigest/shared';
+import type {
+  EvalCase,
+  EvalCaseInput,
+  EvalDashboard,
+  EvalOwnerKind,
+  EvalRun,
+} from '@devdigest/shared';
 import type { Container } from '../../platform/container.js';
 import { AppError, NotFoundError } from '../../platform/errors.js';
 import { EvalRepository } from './repository.js';
 import { EvalRunner } from './run.js';
+import {
+  EvalDashboardService,
+  type EvalCompare,
+  type EvalRunGroupSummary,
+} from './dashboard.js';
 import {
   deriveEvalCase,
   dedupeCaseName,
@@ -144,5 +155,31 @@ export class EvalService {
    */
   async runEvals(workspaceId: string, agentId: string): Promise<EvalRun> {
     return new EvalRunner(this.container).run(workspaceId, agentId);
+  }
+
+  // ---- Read-only aggregation (dashboard / history / compare — Unit 5) -------
+  // Thin delegators to `EvalDashboardService`; the read-heavy aggregation +
+  // regression-alert derivation live there so this file stays small.
+
+  /** Run history for an agent, grouped by `run_group_id` (AC-11). Tenancy-checked. */
+  async getRunHistory(
+    workspaceId: string,
+    agentId: string,
+  ): Promise<EvalRunGroupSummary[]> {
+    return new EvalDashboardService(this.container).history(workspaceId, agentId);
+  }
+
+  /** Eval dashboard — workspace overview, or one agent's detail via `ownerId` (AC-11/AC-12). */
+  async getDashboard(workspaceId: string, ownerId?: string): Promise<EvalDashboard> {
+    return new EvalDashboardService(this.container).dashboard(workspaceId, ownerId);
+  }
+
+  /** Compare two run groups: metric deltas + both stored prompt snapshots (AC-10). */
+  async compareRuns(
+    workspaceId: string,
+    a: string,
+    b: string,
+  ): Promise<EvalCompare> {
+    return new EvalDashboardService(this.container).compare(workspaceId, a, b);
   }
 }
