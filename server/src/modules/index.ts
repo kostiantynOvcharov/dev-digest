@@ -14,6 +14,7 @@ import diffSummary from './diff-summary/routes.js';
 import projectContext from './project-context/routes.js';
 import reviews from './reviews/routes.js';
 import repoIntel from './repo-intel/routes.js';
+import evals from './eval/routes.js';
 
 /**
  * Module registry. Each feature module is a Fastify plugin in
@@ -44,4 +45,5 @@ export const modules: Record<string, FastifyPluginAsync> = {
   projectContext,
   reviews,
   repoIntel,
+  evals,
 };
