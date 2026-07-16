@@ -1,7 +1,8 @@
-import type { EvalCase, EvalCaseInput, EvalOwnerKind } from '@devdigest/shared';
+import type { EvalCase, EvalCaseInput, EvalOwnerKind, EvalRun } from '@devdigest/shared';
 import type { Container } from '../../platform/container.js';
 import { AppError, NotFoundError } from '../../platform/errors.js';
 import { EvalRepository } from './repository.js';
+import { EvalRunner } from './run.js';
 import {
   deriveEvalCase,
   dedupeCaseName,
@@ -132,5 +133,16 @@ export class EvalService {
   /** Delete a case (workspace-scoped). False when not in this workspace. */
   async deleteCase(workspaceId: string, id: string): Promise<boolean> {
     return this.repo.deleteCase(workspaceId, id);
+  }
+
+  /**
+   * Run every eval case owned by `agentId` hermetically and return the
+   * `EvalRun` aggregate (AC-2/AC-5/AC-6). The heavy orchestration lives in
+   * `run.ts`; this stays a thin delegator so later units can extend the module
+   * without colliding here. Tenancy (AC-15) + per-case error handling (AC-16)
+   * are enforced by the runner.
+   */
+  async runEvals(workspaceId: string, agentId: string): Promise<EvalRun> {
+    return new EvalRunner(this.container).run(workspaceId, agentId);
   }
 }

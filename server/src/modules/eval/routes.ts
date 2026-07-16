@@ -14,6 +14,7 @@ import { EvalService } from './service.js';
  *   GET    /eval-cases?owner_kind&owner_id             → list an owner's cases
  *   POST   /eval-cases/:id        EvalCaseInput        → replace a case's editable fields
  *   DELETE /eval-cases/:id                             → delete a case
+ *   POST   /agents/:id/eval-runs                       → run all of an agent's cases (hermetic)
  *
  * Full onion module (routes → service → repository). Every handler resolves
  * tenancy with `getContext` and delegates to `EvalService`; no SQL here. The
@@ -66,5 +67,14 @@ export default async function evalRoutes(appBase: FastifyInstance) {
     const ok = await service.deleteCase(workspaceId, req.params.id);
     if (!ok) throw new NotFoundError('Eval case not found');
     return { ok };
+  });
+
+  // ---- Run all of an agent's cases hermetically (AC-2/AC-5/AC-6/AC-16) -----
+  // Tenancy (AC-15) is enforced in the service: an agent outside the caller's
+  // workspace → 404 before any LLM call. A per-case model/config failure is
+  // recorded errored and the run continues (AC-16) — never a bare 500.
+  app.post('/agents/:id/eval-runs', { schema: { params: IdParams } }, async (req) => {
+    const { workspaceId } = await getContext(app.container, req);
+    return service.runEvals(workspaceId, req.params.id);
   });
 }
