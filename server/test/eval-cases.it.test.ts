@@ -247,4 +247,135 @@ d('eval cases (Testcontainers pg)', () => {
 
     await a.close();
   });
+
+  // ---- Seed (GET /eval-cases/seed) — derive a case, NO persist -------------
+
+  it('seed: accepted decision → non-empty expected, `From finding:` name, persists NOTHING', async () => {
+    const a = await app();
+    const agentId = await createAgent(a);
+    const { findingId } = await seedDecidedFinding(pg.handle.db, workspaceId, agentId, 'accepted');
+
+    const before = await pg.handle.db.select().from(t.evalCases);
+    const res = await a.inject({
+      method: 'GET',
+      url: `/eval-cases/seed?finding_id=${findingId}&decision=accepted`,
+    });
+    expect(res.statusCode).toBe(200);
+    const seeded = res.json();
+    expect(seeded.owner_kind).toBe('agent');
+    expect(seeded.owner_id).toBe(agentId);
+    expect(seeded.name).toBe('From finding: Hardcoded Stripe secret key'); // renamed base
+    expect(seeded.expected_output).toHaveLength(1); // positive (must_find)
+    expect(seeded.expected_output[0]).toMatchObject({ file: 'src/config.ts', start_line: 11 });
+    expect(seeded.input_diff).toContain('stripeKey');
+    expect(seeded.input_meta.guard).toEqual({ file: 'src/config.ts', start_line: 11, end_line: 11 });
+
+    const after = await pg.handle.db.select().from(t.evalCases);
+    expect(after.length).toBe(before.length); // nothing written
+
+    await a.close();
+  });
+
+  it('seed: dismissed decision → empty expected (the client decision drives it, not stored state)', async () => {
+    const a = await app();
+    const agentId = await createAgent(a);
+    // Finding is stored ACCEPTED, but the client asks to seed a `dismissed` case
+    // (AC: seed does not require the finding to be decided that way).
+    const { findingId } = await seedDecidedFinding(pg.handle.db, workspaceId, agentId, 'accepted');
+
+    const seeded = (
+      await a.inject({
+        method: 'GET',
+        url: `/eval-cases/seed?finding_id=${findingId}&decision=dismissed`,
+      })
+    ).json();
+    expect(seeded.expected_output).toEqual([]); // negative (must_not_flag)
+    expect(seeded.input_meta.decision).toBe('dismissed');
+
+    await a.close();
+  });
+
+  it('seed: cross-workspace finding → 404', async () => {
+    const a = await app();
+    const [otherWs] = await pg.handle.db
+      .insert(t.workspaces)
+      .values({ name: 'other-seed' })
+      .returning();
+    const { findingId } = await seedDecidedFinding(pg.handle.db, otherWs!.id, null, 'accepted');
+
+    const res = await a.inject({
+      method: 'GET',
+      url: `/eval-cases/seed?finding_id=${findingId}&decision=accepted`,
+    });
+    expect(res.statusCode).toBe(404);
+
+    await a.close();
+  });
+
+  // ---- Create from a full payload (POST /eval-cases with EvalCaseInput) -----
+
+  it('create from payload: persists + dedupes the name on a repeat', async () => {
+    const a = await app();
+    const agentId = await createAgent(a);
+    const payload = {
+      owner_kind: 'agent',
+      owner_id: agentId,
+      name: 'Manual case',
+      input_diff: '@@ -1 +1 @@\n+x',
+      expected_output: [],
+    };
+
+    const first = await a.inject({ method: 'POST', url: '/eval-cases', payload });
+    expect(first.statusCode).toBe(201);
+    expect(first.json().name).toBe('Manual case');
+    expect(first.json().input_diff).toBe('@@ -1 +1 @@\n+x');
+
+    const second = await a.inject({ method: 'POST', url: '/eval-cases', payload });
+    expect(second.statusCode).toBe(201);
+    expect(second.json().name).toBe('Manual case (2)'); // deduped
+
+    const rows = await pg.handle.db
+      .select()
+      .from(t.evalCases)
+      .where(and(eq(t.evalCases.ownerId, agentId), eq(t.evalCases.workspaceId, workspaceId)));
+    expect(rows.length).toBe(2); // both persisted
+
+    await a.close();
+  });
+
+  it('create from payload: owner agent outside the workspace → 404, nothing written', async () => {
+    const a = await app();
+    const [otherWs] = await pg.handle.db
+      .insert(t.workspaces)
+      .values({ name: 'other-payload' })
+      .returning();
+    const [foreignAgent] = await pg.handle.db
+      .insert(t.agents)
+      .values({
+        workspaceId: otherWs!.id,
+        name: 'Foreign',
+        provider: 'openai',
+        model: 'gpt-4.1',
+        systemPrompt: 's',
+      })
+      .returning();
+
+    const before = await pg.handle.db.select().from(t.evalCases);
+    const res = await a.inject({
+      method: 'POST',
+      url: '/eval-cases',
+      payload: {
+        owner_kind: 'agent',
+        owner_id: foreignAgent!.id,
+        name: 'Should not persist',
+        input_diff: '',
+        expected_output: [],
+      },
+    });
+    expect(res.statusCode).toBe(404);
+    const after = await pg.handle.db.select().from(t.evalCases);
+    expect(after.length).toBe(before.length);
+
+    await a.close();
+  });
 });

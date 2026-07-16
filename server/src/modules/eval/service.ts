@@ -8,7 +8,7 @@ import type {
 import type { Container } from '../../platform/container.js';
 import { AppError, NotFoundError } from '../../platform/errors.js';
 import { EvalRepository } from './repository.js';
-import { EvalRunner } from './run.js';
+import { EvalRunner, type RunCaseResult } from './run.js';
 import {
   EvalDashboardService,
   type EvalCompare,
@@ -95,7 +95,7 @@ export class EvalService {
     );
 
     const existingNames = await this.repo.listCaseNamesByOwner(workspaceId, 'agent', agentId);
-    const name = dedupeCaseName(finding.title, existingNames);
+    const name = dedupeCaseName(`From finding: ${finding.title}`, existingNames);
 
     const row = await this.repo.insertCase({
       workspaceId,
@@ -105,6 +105,91 @@ export class EvalService {
       inputDiff: derived.input_diff,
       inputMeta: derived.input_meta,
       expectedOutput: derived.expected_output,
+    });
+    return toEvalCaseDto(row);
+  }
+
+  /**
+   * Derive an eval case from a finding + an EXPLICIT decision WITHOUT persisting
+   * (powers the "New eval case" modal, seeded from a finding the reviewer just
+   * accepted/dismissed — before that decision has settled). Returns the same
+   * `EvalCaseInput` the modal edits and later POSTs back to `/eval-cases`.
+   *
+   * Tenancy (AC-15): the source finding AND its owning agent must both belong to
+   * the caller's workspace — otherwise not-found. Unlike `createCaseFromFinding`
+   * this does NOT require the finding to already be decided (the client passes
+   * the decision) and does NOT dedupe the name (dedupe happens on Save). Never
+   * logs `input_diff` (A09) and writes nothing.
+   */
+  async seedCaseFromFinding(
+    workspaceId: string,
+    findingId: string,
+    decision: EvalDecision,
+  ): Promise<EvalCaseInput> {
+    const ctx = await this.container.reviewRepo.findingContext(findingId);
+    if (!ctx || ctx.pull.workspaceId !== workspaceId) {
+      throw new NotFoundError('Finding not found');
+    }
+    const { finding, review, pull } = ctx;
+
+    const agentId = review.agentId;
+    if (!agentId) throw new NotFoundError('Finding has no owning agent');
+    const agent = await this.container.agents.get(workspaceId, agentId);
+    if (!agent) throw new NotFoundError('Agent not found');
+
+    // Slice the fragment from THIS file's patch only (mirrors createCaseFromFinding).
+    const files = await this.container.reviewRepo.getPrFiles(pull.id);
+    const patch = files.find((f) => f.path === finding.file)?.patch ?? null;
+
+    const derived = deriveEvalCase(
+      {
+        id: finding.id,
+        file: finding.file,
+        startLine: finding.startLine,
+        endLine: finding.endLine,
+        severity: finding.severity,
+        category: finding.category,
+        title: finding.title,
+      },
+      decision,
+      patch,
+    );
+
+    return {
+      owner_kind: 'agent',
+      owner_id: agentId,
+      name: `From finding: ${finding.title}`,
+      input_diff: derived.input_diff,
+      input_files: null,
+      input_meta: derived.input_meta,
+      expected_output: derived.expected_output,
+      notes: null,
+    };
+  }
+
+  /**
+   * Create a case from a full (possibly hand-edited) `EvalCaseInput` payload —
+   * the Save path for a seeded/edited case. Only agent-owned cases are supported;
+   * the owning agent must be in the caller's workspace (AC-15). The name is
+   * deduped against the owner's existing cases.
+   */
+  async createCaseFromInput(workspaceId: string, input: EvalCaseInput): Promise<EvalCase> {
+    if (input.owner_kind !== 'agent') throw new NotFoundError('Agent not found');
+    const agent = await this.container.agents.get(workspaceId, input.owner_id);
+    if (!agent) throw new NotFoundError('Agent not found');
+
+    const existingNames = await this.repo.listCaseNamesByOwner(workspaceId, 'agent', input.owner_id);
+    const name = dedupeCaseName(input.name, existingNames);
+
+    const row = await this.repo.insertCase({
+      workspaceId,
+      ownerKind: 'agent',
+      ownerId: input.owner_id,
+      name,
+      inputDiff: input.input_diff,
+      inputFiles: input.input_files ?? null,
+      inputMeta: input.input_meta ?? null,
+      expectedOutput: input.expected_output ?? null,
     });
     return toEvalCaseDto(row);
   }
@@ -155,6 +240,20 @@ export class EvalService {
    */
   async runEvals(workspaceId: string, agentId: string): Promise<EvalRun> {
     return new EvalRunner(this.container).run(workspaceId, agentId);
+  }
+
+  /**
+   * Run ONE case EPHEMERALLY against `agentId` and return its scored result —
+   * nothing is persisted (powers the studio "Run case" button on an unsaved or
+   * edited case). Tenancy (AC-15) + per-case error handling (AC-16) live in the
+   * runner. Never logs `input_diff` (A09).
+   */
+  async runCaseOnce(
+    workspaceId: string,
+    agentId: string,
+    input: { input_diff: string; input_meta?: unknown; expected_output: unknown },
+  ): Promise<RunCaseResult> {
+    return new EvalRunner(this.container).runOnce(workspaceId, agentId, input);
   }
 
   // ---- Read-only aggregation (dashboard / history / compare — Unit 5) -------

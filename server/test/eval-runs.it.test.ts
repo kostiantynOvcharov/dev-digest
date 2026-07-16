@@ -206,11 +206,12 @@ d('eval runs — hermetic (Testcontainers pg)', () => {
     expect(run.traces_total).toBe(2);
     expect(run.traces_passed).toBe(1);
 
+    // Case names are derived as `From finding: <title>` (dedupe-passed).
     const byName = Object.fromEntries(run.per_trace.map((p: { name: string }) => [p.name, p]));
-    expect(byName.MustFind.pass).toBe(true); // agent flagged the expected location
-    expect(byName.MustNotFlag.pass).toBe(false); // overlapping finding = noise
+    expect(byName['From finding: MustFind'].pass).toBe(true); // agent flagged the expected location
+    expect(byName['From finding: MustNotFlag'].pass).toBe(false); // overlapping finding = noise
     // Actual output carries the produced (kept) finding, not the phantom.
-    expect(byName.MustFind.actual).toEqual([
+    expect(byName['From finding: MustFind'].actual).toEqual([
       expect.objectContaining({ file: 'src/config.ts', start_line: 11 }),
     ]);
 
@@ -320,6 +321,63 @@ d('eval runs — hermetic (Testcontainers pg)', () => {
     const app = await appWith(new MockLLMProvider('openai', { structured: reviewOf([]) }));
     const res = await app.inject({ method: 'POST', url: `/agents/${crypto.randomUUID()}/eval-runs` });
     expect(res.statusCode).toBe(404);
+    await app.close();
+  });
+
+  it('eval-run-case: runs ONE case ephemerally and persists NOTHING', async () => {
+    // MockLLMProvider pinned to provider `openai` (via container override) so the
+    // run is hermetic regardless of local keys — the agent's provider is openai.
+    const app = await appWith(
+      new MockLLMProvider('openai', { structured: reviewOf([FINDING_11, FINDING_999]) }),
+    );
+    const agent = await createAgent(app);
+
+    const runsBefore = await pg.handle.db.select().from(t.evalRuns);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/agents/${agent.id}/eval-run-case`,
+      payload: {
+        input_diff: PATCH,
+        input_meta: { guard: { file: 'src/config.ts' } },
+        expected_output: [{ file: 'src/config.ts', start_line: 11, end_line: 11 }],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const result = res.json();
+
+    // The response shape the client consumes.
+    expect(result.pass).toBe(true); // agent flagged the expected location (config:11)
+    expect(typeof result.recall).toBe('number');
+    expect(typeof result.precision).toBe('number');
+    expect(typeof result.citation_accuracy).toBe('number');
+    expect(typeof result.duration_ms).toBe('number');
+    expect(result.actual_output).toEqual([
+      expect.objectContaining({ file: 'src/config.ts', start_line: 11 }), // phantom dropped
+    ]);
+
+    // NOTHING persisted — no eval_runs row, no eval_cases row.
+    const runsAfter = await pg.handle.db.select().from(t.evalRuns);
+    expect(runsAfter.length).toBe(runsBefore.length);
+    const cases = await pg.handle.db
+      .select()
+      .from(t.evalCases)
+      .where(eq(t.evalCases.ownerId, agent.id));
+    expect(cases.length).toBe(0);
+
+    await app.close();
+  });
+
+  it('eval-run-case: agent outside the workspace → 404, no LLM call', async () => {
+    const mock = new MockLLMProvider('openai', { structured: reviewOf([]) });
+    const app = await appWith(mock);
+    const res = await app.inject({
+      method: 'POST',
+      url: `/agents/${crypto.randomUUID()}/eval-run-case`,
+      payload: { input_diff: '', expected_output: [] },
+    });
+    expect(res.statusCode).toBe(404);
+    expect(mock.calls.filter((c) => c.method === 'completeStructured')).toHaveLength(0);
     await app.close();
   });
 });

@@ -1,10 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type {
+  Agent,
   EvalPerTrace,
   EvalRun,
   Finding,
   FindingCategory,
+  LLMProvider,
   Severity,
   UnifiedDiff,
 } from '@devdigest/shared';
@@ -106,6 +108,31 @@ function toActual(findings: readonly Finding[]) {
   }));
 }
 
+/**
+ * The outcome of scoring ONE case against the agent (used by both the batch
+ * `run()` and the ephemeral `runOnce()`). Metrics are nullable so an ERRORED
+ * case (`pass: null`) is recorded WITHOUT a fabricated passing/zero value
+ * (AC-16); a scored case always carries a boolean `pass`.
+ */
+export interface RunCaseResult {
+  pass: boolean | null;
+  recall: number | null;
+  precision: number | null;
+  citation_accuracy: number | null;
+  actual_output: unknown;
+  duration_ms: number;
+  cost_usd: number | null;
+}
+
+/** The per-case inputs a single execution needs (agent config is passed separately). */
+interface RunCaseInput {
+  inputDiff: string;
+  inputMeta: unknown;
+  expectedOutput: unknown;
+  /** Engine session id (`eval:<group>:<case>` for a batch, `eval:once:<uuid>` ephemeral). */
+  sessionId: string;
+}
+
 export class EvalRunner {
   private repo: EvalRepository;
 
@@ -154,90 +181,52 @@ export class EvalRunner {
     let totalCost: number | null = 0;
 
     for (const c of cases) {
-      const parsedExpected = ExpectedOutputSchema.parse(c.expectedOutput ?? []);
-      const guardFile = InputMetaSchema.parse(c.inputMeta ?? {}).guard?.file;
-      const start = Date.now();
-      try {
-        const diff = buildDiff(c.inputDiff ?? '', guardFile);
-        // HERMETIC engine call: diff + agent config only. NO specs / intent /
-        // callers / repoMap / prDescription. The engine wraps the (untrusted)
-        // diff under INJECTION_GUARD — AC-13; we do NOT bypass it.
-        const outcome = await reviewPullRequest({
-          systemPrompt,
-          model: agent.model,
-          diff,
-          llm,
-          strategy: agent.strategy,
-          ...(skills.length ? { skills } : {}),
-          sessionId: `eval:${runGroupId}:${c.id}`,
-        });
-        const durationMs = Date.now() - start;
+      // Same per-case execution the ephemeral run uses (AC-16 error handling is
+      // inside the helper). The batch adds persistence + aggregation around it.
+      const result = await this.runOneCase(agent, llm, skills, systemPrompt, {
+        inputDiff: c.inputDiff ?? '',
+        inputMeta: c.inputMeta ?? {},
+        expectedOutput: c.expectedOutput ?? [],
+        sessionId: `eval:${runGroupId}:${c.id}`,
+      });
+      const errored = result.pass === null;
 
-        // `kept` (post-grounding) is authoritative — grounding-exempt kinds are
-        // already inside `kept`, so we do NOT re-ground (spec / AC-6).
-        const produced = outcome.review.findings;
-        const expected = coerceExpected(parsedExpected);
-        const scores = score(produced, expected, produced.length, outcome.dropped.length);
-        const pass = passCase(produced, expected);
-        const actual = toActual(produced);
+      const insert = this.repo.insertRun({
+        caseId: c.id,
+        runGroupId,
+        agentVersion,
+        systemPrompt,
+        pass: result.pass,
+        recall: result.recall,
+        precision: result.precision,
+        citationAccuracy: result.citation_accuracy,
+        durationMs: result.duration_ms,
+        costUsd: result.cost_usd,
+        actualOutput: result.actual_output,
+      });
+      // AC-16: an errored case must still record + continue — never surface the
+      // insert failure of an already-failed case as a 500.
+      if (errored) await insert.catch(() => undefined);
+      else await insert;
 
-        await this.repo.insertRun({
-          caseId: c.id,
-          runGroupId,
-          agentVersion,
-          systemPrompt,
-          pass,
-          recall: scores.recall,
-          precision: scores.precision,
-          citationAccuracy: scores.citation_accuracy,
-          durationMs,
-          costUsd: outcome.costUsd,
-          actualOutput: actual,
-        });
-
-        recallSum += scores.recall;
-        precisionSum += scores.precision;
-        citationSum += scores.citation_accuracy;
+      totalDuration += result.duration_ms;
+      if (!errored) {
+        recallSum += result.recall!;
+        precisionSum += result.precision!;
+        citationSum += result.citation_accuracy!;
         scoredCount += 1;
-        if (pass) passed += 1;
-        totalDuration += durationMs;
+        if (result.pass) passed += 1;
         totalCost =
-          totalCost == null || outcome.costUsd == null ? null : totalCost + outcome.costUsd;
-
-        perTrace.push({ name: c.name, pass, expected: c.expectedOutput ?? [], actual });
-      } catch (err) {
-        // AC-16: the model/config failed for THIS case — record it errored WITH
-        // a reason and continue. NEVER a fabricated passing/zero metric (metrics
-        // stay null), NEVER a bare 500. The reason surfaces in per_trace +
-        // actual_output. (No `input_diff` body is logged — A09.)
-        const durationMs = Date.now() - start;
-        const reason = err instanceof Error ? err.message : 'unknown error';
-        await this.repo
-          .insertRun({
-            caseId: c.id,
-            runGroupId,
-            agentVersion,
-            systemPrompt,
-            pass: null,
-            recall: null,
-            precision: null,
-            citationAccuracy: null,
-            durationMs,
-            costUsd: null,
-            actualOutput: { error: reason },
-          })
-          .catch(() => undefined);
-
-        totalDuration += durationMs;
-        // An errored case is neither passed nor scored (excluded from the metric
-        // mean); it still counts toward traces_total.
-        perTrace.push({
-          name: c.name,
-          pass: false,
-          expected: c.expectedOutput ?? [],
-          actual: { error: reason },
-        });
+          totalCost == null || result.cost_usd == null ? null : totalCost + result.cost_usd;
       }
+      // An errored case is neither passed nor scored (excluded from the metric
+      // mean) but still counts toward traces_total; its per_trace pass is false.
+      perTrace.push({
+        name: c.name,
+        pass: result.pass ?? false,
+        expected: c.expectedOutput ?? [],
+        actual: result.actual_output,
+      });
     }
 
     // Aggregate metrics are the mean over SCORED (non-errored) cases; all-errored
@@ -252,6 +241,106 @@ export class EvalRunner {
       cost_usd: totalCost,
       per_trace: perTrace,
     };
+  }
+
+  /**
+   * Run ONE eval case EPHEMERALLY against `agentId` and return its result —
+   * NOTHING is persisted (no `eval_runs` row, no `run_group_id`). Powers the
+   * "Run case" studio button on an unsaved/edited case.
+   *
+   * Tenancy (AC-15): the agent must belong to the caller's workspace — otherwise
+   * not-found and NO LLM call is made. A model/config failure returns an errored
+   * result (AC-16), never a bare 500.
+   */
+  async runOnce(
+    workspaceId: string,
+    agentId: string,
+    input: { input_diff: string; input_meta?: unknown; expected_output: unknown },
+  ): Promise<RunCaseResult> {
+    const agent = await this.container.agents.get(workspaceId, agentId);
+    if (!agent) throw new NotFoundError('Agent not found');
+
+    // Same agent-owned config the batch run resolves (D7/AC-5): the agent's OWN
+    // provider + enabled, ordered linked skills — never a feature model.
+    const llm = await this.container.llm(agent.provider);
+    const links = await this.container.agentsRepo.linkedSkills(agentId);
+    const skills = links
+      .filter((l) => l.skill.enabled)
+      .map((l) => `### ${l.skill.name}\n\n${l.skill.body}`);
+
+    return this.runOneCase(agent, llm, skills, agent.system_prompt, {
+      inputDiff: input.input_diff,
+      inputMeta: input.input_meta ?? {},
+      expectedOutput: input.expected_output,
+      sessionId: `eval:once:${randomUUID()}`,
+    });
+  }
+
+  /**
+   * Execute ONE case against the agent + return its scored result. Shared by the
+   * batch `run()` (which persists + aggregates around it) and the ephemeral
+   * `runOnce()` (which does neither). HERMETIC: the diff + agent config only —
+   * NO specs / intent / callers / repoMap / prDescription; the (untrusted) diff
+   * reaches the model ONLY through the engine's INJECTION_GUARD wrapping (AC-13).
+   * A per-case model/config failure returns an errored result (`pass: null`,
+   * metrics null, `actual_output: { error }`) instead of throwing (AC-16). Never
+   * logs the `input_diff` body (A09).
+   */
+  private async runOneCase(
+    agent: Agent,
+    llm: LLMProvider,
+    skills: string[],
+    systemPrompt: string,
+    caseInput: RunCaseInput,
+  ): Promise<RunCaseResult> {
+    const parsedExpected = ExpectedOutputSchema.parse(caseInput.expectedOutput ?? []);
+    const guardFile = InputMetaSchema.parse(caseInput.inputMeta ?? {}).guard?.file;
+    const start = Date.now();
+    try {
+      const diff = buildDiff(caseInput.inputDiff ?? '', guardFile);
+      const outcome = await reviewPullRequest({
+        systemPrompt,
+        model: agent.model,
+        diff,
+        llm,
+        strategy: agent.strategy,
+        ...(skills.length ? { skills } : {}),
+        sessionId: caseInput.sessionId,
+      });
+      const durationMs = Date.now() - start;
+
+      // `kept` (post-grounding) is authoritative — grounding-exempt kinds are
+      // already inside `kept`, so we do NOT re-ground (spec / AC-6).
+      const produced = outcome.review.findings;
+      const expected = coerceExpected(parsedExpected);
+      const scores = score(produced, expected, produced.length, outcome.dropped.length);
+      const pass = passCase(produced, expected);
+      const actual = toActual(produced);
+
+      return {
+        pass,
+        recall: scores.recall,
+        precision: scores.precision,
+        citation_accuracy: scores.citation_accuracy,
+        actual_output: actual,
+        duration_ms: durationMs,
+        cost_usd: outcome.costUsd,
+      };
+    } catch (err) {
+      // AC-16: the model/config failed for THIS case — return it errored WITH a
+      // reason. NEVER a fabricated passing/zero metric, NEVER a thrown 500.
+      const durationMs = Date.now() - start;
+      const reason = err instanceof Error ? err.message : 'unknown error';
+      return {
+        pass: null,
+        recall: null,
+        precision: null,
+        citation_accuracy: null,
+        actual_output: { error: reason },
+        duration_ms: durationMs,
+        cost_usd: null,
+      };
+    }
   }
 }
 
