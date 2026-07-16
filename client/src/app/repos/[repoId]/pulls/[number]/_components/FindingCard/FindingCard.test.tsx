@@ -71,27 +71,20 @@ describe("FindingCard (smoke, both themes)", () => {
     });
   });
 
-  it("clicking Accept fires the action AND opens the New eval case modal", () => {
+  it("clicking Accept fires the action but does NOT open the modal (only highlights)", () => {
     const onAction = vi.fn();
     renderWithIntl(<FindingCard f={FINDING} defaultExpanded onAction={onAction} />);
-    expect(screen.queryByText("New eval case")).not.toBeInTheDocument();
     fireEvent.click(screen.getByText("Accept"));
     expect(onAction).toHaveBeenCalledWith("accept");
-    expect(screen.getByText("New eval case")).toBeInTheDocument();
-    expect(
-      screen.getByText("Seeded from an accepted finding · assert the expected output"),
-    ).toBeInTheDocument();
+    expect(screen.queryByText("New eval case")).not.toBeInTheDocument();
   });
 
-  it("clicking Dismiss fires the action AND opens the New eval case modal", () => {
+  it("clicking Dismiss fires the action but does NOT open the modal (only highlights)", () => {
     const onAction = vi.fn();
     renderWithIntl(<FindingCard f={FINDING} defaultExpanded onAction={onAction} />);
     fireEvent.click(screen.getByText("Dismiss"));
     expect(onAction).toHaveBeenCalledWith("dismiss");
-    expect(screen.getByText("New eval case")).toBeInTheDocument();
-    expect(
-      screen.getByText("Seeded from a dismissed finding · assert the expected output"),
-    ).toBeInTheDocument();
+    expect(screen.queryByText("New eval case")).not.toBeInTheDocument();
   });
 
   it("disables 'Turn into eval case' for an undecided finding and opens no modal", () => {

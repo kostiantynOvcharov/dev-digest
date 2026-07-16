@@ -66,8 +66,9 @@ export function FindingCard({
   // this from props every render — never mirror it into state.
   const decided = accepted || dismissed;
 
-  // Deciding a finding (or clicking the flask) opens the "New eval case" modal,
-  // seeded server-side from the finding + the decision. `null` ⇒ modal closed.
+  // Accept/Dismiss only record + highlight the decision. The "Turn into eval
+  // case" flask (enabled once decided) opens the "New eval case" modal, seeded
+  // server-side from the finding + its decision. `null` ⇒ modal closed.
   const [seedDecision, setSeedDecision] = React.useState<null | "accepted" | "dismissed">(null);
   const seedQuery = useEvalCaseSeed(f.id, seedDecision ?? "accepted", seedDecision !== null);
   const seed = seedQuery.data;
@@ -118,10 +119,7 @@ export function FindingCard({
               disabled={pending}
               active={accepted}
               style={accepted ? { color: "var(--ok)", borderColor: "var(--ok)" } : undefined}
-              onClick={() => {
-                onAction?.("accept");
-                setSeedDecision("accepted");
-              }}
+              onClick={() => onAction?.("accept")}
             >
               {t("finding.accept")}
             </Button>
@@ -131,10 +129,8 @@ export function FindingCard({
               icon="X"
               disabled={pending}
               active={dismissed}
-              onClick={() => {
-                onAction?.("dismiss");
-                setSeedDecision("dismissed");
-              }}
+              style={dismissed ? { color: "var(--crit)", borderColor: "var(--crit)" } : undefined}
+              onClick={() => onAction?.("dismiss")}
             >
               {t("finding.dismiss")}
             </Button>
