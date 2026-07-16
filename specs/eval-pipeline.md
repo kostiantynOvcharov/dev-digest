@@ -1,4 +1,4 @@
-# Spec: Eval Pipeline for reviewer agents   |   Spec ID: SPEC-04   |   Status: draft
+# Spec: Eval Pipeline for reviewer agents   |   Spec ID: SPEC-04   |   Status: approved
 Supersedes: none
 
 > Filename note: the caller requested this file at `specs/eval-pipeline.md`; the repo convention is
