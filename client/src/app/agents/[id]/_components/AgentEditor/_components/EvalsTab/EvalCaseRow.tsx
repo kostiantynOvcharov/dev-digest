@@ -8,7 +8,7 @@
 import React from "react";
 import { Badge, IconBtn } from "@devdigest/ui";
 import type { EvalCase, EvalRunRecord } from "@devdigest/shared";
-import { expectationSummary } from "@/lib/eval-format";
+import { expectationSummary, isMustNotFlag } from "@/lib/eval-format";
 
 function StatusBadge({ run }: { run: EvalRunRecord | undefined }) {
   if (!run) return <Badge color="var(--text-muted)">never run</Badge>;
@@ -47,6 +47,11 @@ export function EvalCaseRow({
       <span style={{ flex: 1, minWidth: 0, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
         {evalCase.name}
       </span>
+      {isMustNotFlag(evalCase) ? (
+        <Badge color="var(--ok)">MUST NOT FLAG</Badge>
+      ) : (
+        <Badge color="var(--accent)">MUST FIND</Badge>
+      )}
       <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{expectationSummary(evalCase)}</span>
       <StatusBadge run={latestRun} />
       <IconBtn icon="Play" label={`Run eval set for ${evalCase.name}`} onClick={onRun} />

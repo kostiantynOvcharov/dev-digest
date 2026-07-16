@@ -25,6 +25,22 @@ import type {
   EvalRun,
 } from "@devdigest/shared";
 
+/**
+ * Ephemeral single-case run result (`POST /agents/:id/eval-run-case`). A
+ * server-internal DTO — not part of the vendored contract barrel — so mirrored
+ * here read-only, like `EvalRunGroupSummary` below. `actual_output` is the
+ * produced findings array, or `{ error }` on model failure (metrics null then).
+ */
+export interface EvalRunCaseResult {
+  pass: boolean | null;
+  recall: number | null;
+  precision: number | null;
+  citation_accuracy: number | null;
+  actual_output: unknown;
+  duration_ms: number;
+  cost_usd: number | null;
+}
+
 // ---------------------------------------------------------------------------
 // Server aggregation DTOs (mirror server/src/modules/eval/dashboard.ts). These
 // are response shapes, not shared contracts — hence a local, read-only mirror.
@@ -69,6 +85,8 @@ export const evalKeys = {
   history: (agentId: string) => ["eval-runs", agentId] as const,
   dashboard: (ownerId?: string) => ["eval-dashboard", ownerId ?? "__all__"] as const,
   compare: (a: string, b: string) => ["eval-compare", a, b] as const,
+  seed: (findingId: string, decision: string) =>
+    ["eval-case-seed", findingId, decision] as const,
 };
 
 // ---------------------------------------------------------------------------
@@ -94,6 +112,44 @@ export function useCreateEvalCase() {
     onError: (err) => {
       notify.error(err instanceof Error ? err.message : "Couldn't create the eval case.");
     },
+  });
+}
+
+/**
+ * Create an eval case from a fully-formed `EvalCaseInput` payload (the seed
+ * flow: a decided finding is expanded server-side into a draft case the reviewer
+ * tweaks before saving). POSTs the whole payload to `POST /eval-cases`. Like
+ * `useCreateEvalCase` this is a PRIMARY action → toast both edges + refresh the
+ * owner's list. Kept separate from `useCreateEvalCase` (which posts a bare
+ * `{ finding_id }`) so the two call sites stay honest about what they send.
+ */
+export function useCreateEvalCaseFromInput(ownerKind: EvalOwnerKind, ownerId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: EvalCaseInput) => api.post<EvalCase>("/eval-cases", input),
+    onSuccess: () => {
+      notify.success("Eval case created.");
+      qc.invalidateQueries({ queryKey: evalKeys.cases(ownerKind, ownerId) });
+    },
+    onError: (err) => {
+      notify.error(err instanceof Error ? err.message : "Couldn't create the eval case.");
+    },
+  });
+}
+
+/**
+ * Run ONE case ephemerally (`POST /agents/:id/eval-run-case`) — nothing is
+ * persisted, so there is NO cache invalidation and NO toast (the result renders
+ * inline in the editor). Returns the single-case metrics + `actual_output`.
+ */
+export function useRunEvalCase(agentId: string) {
+  return useMutation({
+    mutationFn: (input: {
+      input_diff: string;
+      input_files: unknown;
+      input_meta: unknown;
+      expected_output: unknown;
+    }) => api.post<EvalRunCaseResult>(`/agents/${agentId}/eval-run-case`, input),
   });
 }
 
@@ -167,6 +223,28 @@ export function useEvalCases(ownerKind: EvalOwnerKind, ownerId: string | null | 
         `/eval-cases?owner_kind=${ownerKind}&owner_id=${encodeURIComponent(ownerId ?? "")}`,
       ),
     enabled: !!ownerId,
+  });
+}
+
+/**
+ * Seed a NOT-yet-persisted `EvalCaseInput` from a DECIDED finding
+ * (`GET /eval-cases/seed`). The server expands the finding into a draft case
+ * (name, input diff/files/meta, and the expected output implied by the
+ * decision: accepted → must_find, dismissed → must_not_flag). No persistence —
+ * the editor lets the reviewer tweak it and Save creates the real case.
+ */
+export function useEvalCaseSeed(
+  findingId: string,
+  decision: "accepted" | "dismissed",
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: evalKeys.seed(findingId, decision),
+    queryFn: () =>
+      api.get<EvalCaseInput>(
+        `/eval-cases/seed?finding_id=${encodeURIComponent(findingId)}&decision=${decision}`,
+      ),
+    enabled,
   });
 }
 

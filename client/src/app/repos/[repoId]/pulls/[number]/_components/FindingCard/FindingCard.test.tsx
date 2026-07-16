@@ -1,20 +1,32 @@
-import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import type { FindingRecord } from "@devdigest/shared";
 import messages from "../../../../../../../../messages/en/prReview.json";
 
-// The eval-case mutation is exercised through its hook — mock the module (as
-// FindingsPanel does for useFindingAction) so the button behaviour is asserted
-// without a QueryClient / real network call.
-const createEvalCaseMutate = vi.fn();
+// Deciding a finding (or the flask) now opens the "New eval case" editor, seeded
+// from the finding via `useEvalCaseSeed`. Mock the eval hooks so the button
+// behaviour is asserted without a QueryClient / real network call. The editor
+// mounts once the seed resolves, so the seed mock always returns a ready case.
+const SEED = {
+  owner_kind: "agent" as const,
+  owner_id: "ag1",
+  name: "From finding: Hardcoded Stripe secret key",
+  input_diff: "@@ diff @@",
+  input_files: null,
+  input_meta: null,
+  expected_output: [{ file: "src/config.ts", start_line: 11, end_line: 11, title: "Hardcoded Stripe secret key" }],
+  notes: null,
+};
 vi.mock("../../../../../../../lib/hooks/eval", () => ({
-  useCreateEvalCase: () => ({ mutate: createEvalCaseMutate, isPending: false }),
+  useEvalCaseSeed: () => ({ data: SEED }),
+  useRunEvalCase: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useCreateEvalCaseFromInput: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUpdateEvalCase: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
 import { FindingCard } from "./FindingCard";
 
-beforeEach(() => createEvalCaseMutate.mockClear());
 afterEach(cleanup);
 
 const FINDING: FindingRecord = {
@@ -59,30 +71,47 @@ describe("FindingCard (smoke, both themes)", () => {
     });
   });
 
-  it("fires accept/dismiss actions", () => {
+  it("clicking Accept fires the action AND opens the New eval case modal", () => {
     const onAction = vi.fn();
     renderWithIntl(<FindingCard f={FINDING} defaultExpanded onAction={onAction} />);
+    expect(screen.queryByText("New eval case")).not.toBeInTheDocument();
     fireEvent.click(screen.getByText("Accept"));
     expect(onAction).toHaveBeenCalledWith("accept");
-    fireEvent.click(screen.getByText("Dismiss"));
-    expect(onAction).toHaveBeenCalledWith("dismiss");
+    expect(screen.getByText("New eval case")).toBeInTheDocument();
+    expect(
+      screen.getByText("Seeded from an accepted finding · assert the expected output"),
+    ).toBeInTheDocument();
   });
 
-  it("disables 'Turn into eval case' for an undecided finding and fires no request", () => {
+  it("clicking Dismiss fires the action AND opens the New eval case modal", () => {
+    const onAction = vi.fn();
+    renderWithIntl(<FindingCard f={FINDING} defaultExpanded onAction={onAction} />);
+    fireEvent.click(screen.getByText("Dismiss"));
+    expect(onAction).toHaveBeenCalledWith("dismiss");
+    expect(screen.getByText("New eval case")).toBeInTheDocument();
+    expect(
+      screen.getByText("Seeded from a dismissed finding · assert the expected output"),
+    ).toBeInTheDocument();
+  });
+
+  it("disables 'Turn into eval case' for an undecided finding and opens no modal", () => {
     renderWithIntl(<FindingCard f={FINDING} defaultExpanded onAction={() => {}} />);
     const button = screen.getByRole("button", { name: "Turn into eval case" });
     expect(button).toBeDisabled();
     fireEvent.click(button);
-    expect(createEvalCaseMutate).not.toHaveBeenCalled();
+    expect(screen.queryByText("New eval case")).not.toBeInTheDocument();
   });
 
-  it("enables 'Turn into eval case' once accepted and creates the case with the finding id", () => {
+  it("enables 'Turn into eval case' once accepted and opens the modal without re-deciding", () => {
+    const onAction = vi.fn();
     const accepted: FindingRecord = { ...FINDING, accepted_at: "2026-07-16T00:00:00.000Z" };
-    renderWithIntl(<FindingCard f={accepted} defaultExpanded onAction={() => {}} />);
+    renderWithIntl(<FindingCard f={accepted} defaultExpanded onAction={onAction} />);
     const button = screen.getByRole("button", { name: "Turn into eval case" });
     expect(button).toBeEnabled();
     fireEvent.click(button);
-    expect(createEvalCaseMutate).toHaveBeenCalledWith("f1");
+    // The flask only opens the editor; it does not re-fire an accept/dismiss action.
+    expect(onAction).not.toHaveBeenCalled();
+    expect(screen.getByText("New eval case")).toBeInTheDocument();
   });
 
   it("enables 'Turn into eval case' once dismissed", () => {
@@ -91,6 +120,6 @@ describe("FindingCard (smoke, both themes)", () => {
     const button = screen.getByRole("button", { name: "Turn into eval case" });
     expect(button).toBeEnabled();
     fireEvent.click(button);
-    expect(createEvalCaseMutate).toHaveBeenCalledWith("f1");
+    expect(screen.getByText("New eval case")).toBeInTheDocument();
   });
 });

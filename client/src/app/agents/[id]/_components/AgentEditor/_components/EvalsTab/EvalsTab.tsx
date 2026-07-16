@@ -16,7 +16,7 @@ import { notify } from "@/lib/toast";
 import { useEvalCases, useEvalDashboard, useRunEvals, useDeleteEvalCase } from "@/lib/hooks/eval";
 import { latestRunByCase, pct } from "@/lib/eval-format";
 import { EvalCaseRow } from "./EvalCaseRow";
-import { EvalCaseEditor } from "./EvalCaseEditor";
+import { EvalCaseEditor } from "@/components/EvalCaseEditor";
 
 export function EvalsTab({ agent }: { agent: Agent }) {
   const casesQuery = useEvalCases("agent", agent.id);
@@ -123,7 +123,25 @@ export function EvalsTab({ agent }: { agent: Agent }) {
         )}
       </section>
 
-      {editing && <EvalCaseEditor agent={agent} evalCase={editing} onClose={() => setEditingId(null)} />}
+      {editing && (
+        <EvalCaseEditor
+          mode="edit"
+          editCaseId={editing.id}
+          agentId={agent.id}
+          ownerKind="agent"
+          ownerId={agent.id}
+          title="Edit eval case"
+          subtitle="Assert the expected output"
+          initial={{
+            name: editing.name,
+            input_diff: editing.input_diff,
+            input_files: editing.input_files,
+            input_meta: editing.input_meta,
+            expected_output: editing.expected_output,
+          }}
+          onClose={() => setEditingId(null)}
+        />
+      )}
     </div>
   );
 }
