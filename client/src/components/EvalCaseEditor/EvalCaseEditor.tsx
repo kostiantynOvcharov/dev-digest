@@ -26,6 +26,7 @@ import {
 } from "@/lib/hooks/eval";
 import { isMustNotFlag } from "@/lib/eval-format";
 import { formatCost } from "@/lib/cost";
+import { notify } from "@/lib/toast";
 
 /** One expected finding — kept loose (passthrough) so hand edits aren't rejected. */
 const ExpectedFinding = z
@@ -134,26 +135,46 @@ export function EvalCaseEditor({
     notes: null,
   });
 
+  // `name` is a REQUIRED field server-side (`EvalCaseInput.name` is `min(1)`), so
+  // guard the primary actions on a non-empty trimmed name. The skill flow opens
+  // this editor blank (no PR-finding to seed a name), so without this guard a
+  // Save with an untouched name POSTs `name: ""` → a 422 the reviewer can't act on.
+  const nameOk = name.trim().length > 0;
+
   const runNow = async () => {
     if (!parsed.ok) return;
-    const result = await runCase.mutateAsync({
-      input_diff: diff,
-      input_files: initial.input_files,
-      input_meta: initial.input_meta,
-      expected_output: parsed.value,
-    });
-    setLastRun(result);
+    // `useRunEvalCase` has no error toast (the result renders inline), so surface
+    // a failure here and swallow the rejection — never let it escape as an
+    // unhandled runtime error.
+    try {
+      const result = await runCase.mutateAsync({
+        input_diff: diff,
+        input_files: initial.input_files,
+        input_meta: initial.input_meta,
+        expected_output: parsed.value,
+      });
+      setLastRun(result);
+    } catch (err) {
+      notify.error(err instanceof Error ? err.message : "The eval run failed.");
+    }
   };
 
   const save = async () => {
-    if (!parsed.ok) return;
-    if (runOnSave) await runNow();
-    if (mode === "create") {
-      await create.mutateAsync(buildInput());
-    } else {
-      await update.mutateAsync({ id: editCaseId!, input: buildInput() });
+    if (!parsed.ok || !nameOk) return;
+    // The create/update hooks already surface failures as a toast; swallow the
+    // rejected `mutateAsync` here so it never bubbles up as an unhandled runtime
+    // error, and keep the modal open so the reviewer can correct the input.
+    try {
+      if (runOnSave) await runNow();
+      if (mode === "create") {
+        await create.mutateAsync(buildInput());
+      } else {
+        await update.mutateAsync({ id: editCaseId!, input: buildInput() });
+      }
+      onClose();
+    } catch {
+      /* handled by the mutation's onError toast; keep the modal open */
     }
-    onClose();
   };
 
   const addSkeleton = () => {
@@ -186,7 +207,7 @@ export function EvalCaseEditor({
             >
               {runCase.isPending ? "Running…" : "Run case"}
             </Button>
-            <Button kind="primary" onClick={save} disabled={busy || !parsed.ok}>
+            <Button kind="primary" onClick={save} disabled={busy || !parsed.ok || !nameOk}>
               {create.isPending || update.isPending ? "Saving…" : "Save"}
             </Button>
           </div>
@@ -197,7 +218,12 @@ export function EvalCaseEditor({
         <CaseKindBox negative={negative} first={firstExpected} />
 
         <label style={{ display: "block" }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-secondary)" }}>Name</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-secondary)" }}>
+            Name
+            {!nameOk && (
+              <span style={{ marginLeft: 8, fontWeight: 500, color: "var(--crit)" }}>· required</span>
+            )}
+          </span>
           <div style={{ marginTop: 8 }}>
             <TextInput value={name} onChange={setName} placeholder="Eval case name" />
           </div>
