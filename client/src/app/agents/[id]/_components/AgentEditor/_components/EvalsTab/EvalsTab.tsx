@@ -127,7 +127,6 @@ export function EvalsTab({ agent }: { agent: Agent }) {
         <EvalCaseEditor
           mode="edit"
           editCaseId={editing.id}
-          agentId={agent.id}
           ownerKind="agent"
           ownerId={agent.id}
           title="Edit eval case"

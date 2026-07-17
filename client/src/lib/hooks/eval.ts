@@ -82,12 +82,17 @@ export interface EvalCompare {
 export const evalKeys = {
   cases: (ownerKind: EvalOwnerKind, ownerId: string) =>
     ["eval-cases", ownerKind, ownerId] as const,
-  history: (agentId: string) => ["eval-runs", agentId] as const,
-  dashboard: (ownerId?: string) => ["eval-dashboard", ownerId ?? "__all__"] as const,
+  history: (ownerKind: EvalOwnerKind, ownerId: string) =>
+    ["eval-runs", ownerKind, ownerId] as const,
+  dashboard: (ownerId?: string, ownerKind: EvalOwnerKind = "agent") =>
+    ["eval-dashboard", ownerKind, ownerId ?? "__all__"] as const,
   compare: (a: string, b: string) => ["eval-compare", a, b] as const,
   seed: (findingId: string, decision: string) =>
     ["eval-case-seed", findingId, decision] as const,
 };
+
+/** Owner path segment for the run/history endpoints (`agents` | `skills`). */
+const ownerPath = (ownerKind: EvalOwnerKind) => (ownerKind === "skill" ? "skills" : "agents");
 
 // ---------------------------------------------------------------------------
 // Mutations
@@ -138,18 +143,20 @@ export function useCreateEvalCaseFromInput(ownerKind: EvalOwnerKind, ownerId: st
 }
 
 /**
- * Run ONE case ephemerally (`POST /agents/:id/eval-run-case`) — nothing is
- * persisted, so there is NO cache invalidation and NO toast (the result renders
- * inline in the editor). Returns the single-case metrics + `actual_output`.
+ * Run ONE case ephemerally (`POST /{agents|skills}/:id/eval-run-case`) — nothing
+ * is persisted, so there is NO cache invalidation and NO toast (the result
+ * renders inline in the editor). Returns the single-case metrics +
+ * `actual_output`. `ownerId` first, `ownerKind` optional (default "agent") so
+ * existing agent call sites keep working.
  */
-export function useRunEvalCase(agentId: string) {
+export function useRunEvalCase(ownerId: string, ownerKind: EvalOwnerKind = "agent") {
   return useMutation({
     mutationFn: (input: {
       input_diff: string;
       input_files: unknown;
       input_meta: unknown;
       expected_output: unknown;
-    }) => api.post<EvalRunCaseResult>(`/agents/${agentId}/eval-run-case`, input),
+    }) => api.post<EvalRunCaseResult>(`/${ownerPath(ownerKind)}/${ownerId}/eval-run-case`, input),
   });
 }
 
@@ -189,19 +196,21 @@ export function useDeleteEvalCase(ownerKind: EvalOwnerKind, ownerId: string) {
 }
 
 /**
- * Run every case in an agent's set hermetically (`POST /agents/:id/eval-runs`)
- * and return the `EvalRun` aggregate. A PRIMARY action → toast on both edges,
- * and invalidate the agent's history + dashboards so the fresh run shows up.
+ * Run every case in an owner's set hermetically
+ * (`POST /{agents|skills}/:id/eval-runs`) and return the `EvalRun` aggregate. A
+ * PRIMARY action → toast on both edges, and invalidate the owner's history +
+ * dashboards so the fresh run shows up. `ownerId` first, `ownerKind` optional
+ * (default "agent") so existing agent call sites keep working.
  */
-export function useRunEvals(agentId: string) {
+export function useRunEvals(ownerId: string, ownerKind: EvalOwnerKind = "agent") {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => api.post<EvalRun>(`/agents/${agentId}/eval-runs`),
+    mutationFn: () => api.post<EvalRun>(`/${ownerPath(ownerKind)}/${ownerId}/eval-runs`),
     onSuccess: (run) => {
       notify.success(
         `Eval run complete — ${run.traces_passed}/${run.traces_total} case(s) passed.`,
       );
-      qc.invalidateQueries({ queryKey: evalKeys.history(agentId) });
+      qc.invalidateQueries({ queryKey: evalKeys.history(ownerKind, ownerId) });
       qc.invalidateQueries({ queryKey: ["eval-dashboard"] });
     },
     onError: (err) => {
@@ -248,22 +257,35 @@ export function useEvalCaseSeed(
   });
 }
 
-/** An agent's run history, grouped by `run_group_id`, newest first. */
-export function useEvalRunHistory(agentId: string | null | undefined) {
+/**
+ * An owner's run history, grouped by `run_group_id`, newest first. `ownerId`
+ * first, `ownerKind` optional (default "agent") so agent call sites are unchanged.
+ */
+export function useEvalRunHistory(
+  ownerId: string | null | undefined,
+  ownerKind: EvalOwnerKind = "agent",
+) {
   return useQuery({
-    queryKey: evalKeys.history(agentId ?? ""),
-    queryFn: () => api.get<EvalRunGroupSummary[]>(`/agents/${agentId}/eval-runs`),
-    enabled: !!agentId,
+    queryKey: evalKeys.history(ownerKind, ownerId ?? ""),
+    queryFn: () =>
+      api.get<EvalRunGroupSummary[]>(`/${ownerPath(ownerKind)}/${ownerId}/eval-runs`),
+    enabled: !!ownerId,
   });
 }
 
-/** The eval dashboard — workspace overview, or one agent's detail via `ownerId`. */
-export function useEvalDashboard(ownerId?: string | null) {
+/**
+ * The eval dashboard — workspace overview (no `ownerId`), or one owner's detail
+ * via `ownerId` (+ `owner_kind`). `ownerId` first, `ownerKind` optional (default
+ * "agent"); the query key is distinct per (ownerId, ownerKind).
+ */
+export function useEvalDashboard(ownerId?: string | null, ownerKind: EvalOwnerKind = "agent") {
   return useQuery({
-    queryKey: evalKeys.dashboard(ownerId ?? undefined),
+    queryKey: evalKeys.dashboard(ownerId ?? undefined, ownerKind),
     queryFn: () =>
       api.get<EvalDashboard>(
-        ownerId ? `/eval-dashboard?owner_id=${encodeURIComponent(ownerId)}` : "/eval-dashboard",
+        ownerId
+          ? `/eval-dashboard?owner_id=${encodeURIComponent(ownerId)}&owner_kind=${ownerKind}`
+          : "/eval-dashboard",
       ),
   });
 }

@@ -153,7 +153,6 @@ export function FindingCard({
     {seedDecision !== null && seed && (
       <EvalCaseEditor
         mode="create"
-        agentId={seed.owner_id}
         ownerKind="agent"
         ownerId={seed.owner_id}
         title="New eval case"

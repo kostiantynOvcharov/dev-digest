@@ -72,7 +72,6 @@ export interface EvalCaseEditorInitial {
 export function EvalCaseEditor({
   title,
   subtitle,
-  agentId,
   ownerKind,
   ownerId,
   mode,
@@ -82,7 +81,6 @@ export function EvalCaseEditor({
 }: {
   title: string;
   subtitle: string;
-  agentId: string;
   ownerKind: EvalOwnerKind;
   ownerId: string;
   mode: "create" | "edit";
@@ -92,7 +90,7 @@ export function EvalCaseEditor({
 }) {
   const create = useCreateEvalCaseFromInput(ownerKind, ownerId);
   const update = useUpdateEvalCase(ownerKind, ownerId);
-  const runCase = useRunEvalCase(agentId);
+  const runCase = useRunEvalCase(ownerId, ownerKind);
 
   const [name, setName] = React.useState(initial.name);
   const [diff, setDiff] = React.useState(initial.input_diff);

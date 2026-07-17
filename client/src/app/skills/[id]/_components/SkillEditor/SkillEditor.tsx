@@ -27,7 +27,7 @@ export function SkillEditor({ skill, tab, onTab }: { skill: Skill; tab: string; 
         {tab === "config" && <ConfigTab key={skill.id} skill={skill} />}
         {tab === "context" && <ContextTab skill={skill} />}
         {tab === "preview" && <PreviewTab skill={skill} />}
-        {tab === "evals" && <EvalsTab />}
+        {tab === "evals" && <EvalsTab skill={skill} />}
         {tab === "stats" && <StatsTab skill={skill} />}
         {tab === "versions" && <VersionsTab skill={skill} />}
       </div>
