@@ -1,0 +1,370 @@
+{
+  "metadata": {
+    "skill_name": "onion-architecture",
+    "skill_path": "<path/to/skill>",
+    "executor_model": "claude-opus-4-8[1m]",
+    "analyzer_model": "claude-opus-4-8[1m]",
+    "timestamp": "2026-07-13T18:47:30Z",
+    "evals_run": [
+      1,
+      2,
+      3
+    ],
+    "runs_per_configuration": 3
+  },
+  "runs": [
+    {
+      "eval_id": 1,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 7,
+        "failed": 0,
+        "total": 7,
+        "time_seconds": 141.4,
+        "tokens": 49985,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Flags routes.ts querying the DB directly (route-no-direct-db)",
+          "passed": true,
+          "evidence": "Findings 1-3: names route-no-direct-db for the drizzle/db-schema imports and both inline queries."
+        },
+        {
+          "text": "Flags service new-ing concrete OctokitGitHubClient instead of container.github()",
+          "passed": true,
+          "evidence": "Finding 7: service-prefers-injected-adapters; fix uses `await this.container.github()`."
+        },
+        {
+          "text": "Flags service querying DB directly in countUnread (service-no-direct-db)",
+          "passed": true,
+          "evidence": "Findings 4-5: service-no-direct-db, pushes count into repo."
+        },
+        {
+          "text": "Flags service importing sibling agents/repository.js (no-cross-module-internals)",
+          "passed": true,
+          "evidence": "Finding 6: names no-cross-module-internals, notes dead code, suggests container.agentsRepo."
+        },
+        {
+          "text": "Flags repository importing from adapters/ (repository-no-adapters)",
+          "passed": true,
+          "evidence": "Finding 8: repository-no-adapters on renderMarkdown import."
+        },
+        {
+          "text": "Flags repository deleteById missing workspaceId predicate (tenancy)",
+          "passed": true,
+          "evidence": "Finding 10: workspace guard, cross-tenant delete."
+        },
+        {
+          "text": "Does NOT falsely flag db/rows row-type imports or pure helpers.ts",
+          "passed": true,
+          "evidence": "'Looks suspicious but is actually fine' section explicitly clears db/rows imports and helpers.ts, citing the carve-out."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 2,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 6,
+        "failed": 0,
+        "total": 6,
+        "time_seconds": 109.1,
+        "tokens": 37440,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Flags contract importing fastify (FastifyRequest) - core-stays-pure",
+          "passed": true,
+          "evidence": "Problem 1: names core-stays-pure on the fastify import."
+        },
+        {
+          "text": "Flags contract importing db/schema Drizzle table - core-stays-pure",
+          "passed": true,
+          "evidence": "Problem 2: core-stays-pure; move NotificationRow to db/rows.ts."
+        },
+        {
+          "text": "Flags contract holding presentation logic (notificationFromRequest)",
+          "passed": true,
+          "evidence": "Problem 3: request-parsing is presentation work; the real (non-elidable) leak."
+        },
+        {
+          "text": "Flags reviewer-core importing node:fs and node:child_process",
+          "passed": true,
+          "evidence": "Problems 1-2: core-no-node-io-builtins on fs and child_process."
+        },
+        {
+          "text": "Flags reviewer-core importing simple-git - core-no-io-libraries",
+          "passed": true,
+          "evidence": "Problem 3: core-no-io-libraries."
+        },
+        {
+          "text": "Recommends passing file contents / commits in as arguments (keep injected LLMProvider)",
+          "passed": true,
+          "evidence": "Fix rewrites enrichReview to take EnrichedContext + branch; confirms LLMProvider injection is correct."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 3,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 6,
+        "failed": 0,
+        "total": 6,
+        "time_seconds": 93.2,
+        "tokens": 37963,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Proposes the layered split modules/webhooks/{routes.ts, service.ts, repository.ts}",
+          "passed": true,
+          "evidence": "Exactly the flat layered shape (+ helpers.ts), explicitly copies modules/agents/ and warns against thin modules."
+        },
+        {
+          "text": "Routes = Zod + getContext + delegate; Service orchestrates + workspaceId first",
+          "passed": true,
+          "evidence": "routes.ts uses getContext + Zod schema provider + delegate; service takes workspaceId first, threads to repo."
+        },
+        {
+          "text": "Repository is the only place with Drizzle, every where() workspace-scoped",
+          "passed": true,
+          "evidence": "Repository imports drizzle 'only here'; every where includes workspaceId; explains the workspace guard."
+        },
+        {
+          "text": "GitHub call via GitHubClient interface from container.github(), NOT new OctokitGitHubClient()",
+          "passed": true,
+          "evidence": "await this.container.github() returns GitHubClient; explicitly forbids importing/new-ing OctokitGitHubClient; extends existing interface + adapter + mocks."
+        },
+        {
+          "text": "New table in db/schema/*.ts + pnpm db:generate (no hand-written migration)",
+          "passed": true,
+          "evidence": "Adds table to db/schema, row type in db/rows.ts, runs pnpm db:generate, do-not-touch db/migrations."
+        },
+        {
+          "text": "Shared shapes as Zod contracts in vendor/shared/contracts (both copies); register one line in modules/index.ts",
+          "passed": true,
+          "evidence": "Contracts in vendor/shared/contracts x2 lock-step; registers with one import + one entry in the real modules Record."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 1,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 7,
+        "failed": 0,
+        "total": 7,
+        "time_seconds": 137.1,
+        "tokens": 32252,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Flags routes.ts querying the DB directly (route-no-direct-db)",
+          "passed": true,
+          "evidence": "C1: routes query DB directly; identifies drizzle/db-schema imports as the smell."
+        },
+        {
+          "text": "Flags service new-ing concrete OctokitGitHubClient instead of container.github()",
+          "passed": true,
+          "evidence": "H1: concrete adapter, dependency-inversion violation; recommends a GitHubClient port from container."
+        },
+        {
+          "text": "Flags service querying DB directly in countUnread (service-no-direct-db)",
+          "passed": true,
+          "evidence": "C2: application->infrastructure leak, push count into repository."
+        },
+        {
+          "text": "Flags service importing sibling agents/repository.js (no-cross-module-internals)",
+          "passed": true,
+          "evidence": "M1: cross-module reach into another module's repository, also dead code."
+        },
+        {
+          "text": "Flags repository importing from adapters/ (repository-no-adapters)",
+          "passed": true,
+          "evidence": "H4: repository imports renderMarkdown from an unrelated ripgrep adapter."
+        },
+        {
+          "text": "Flags repository deleteById missing workspaceId predicate (tenancy)",
+          "passed": true,
+          "evidence": "M3: deleteById not workspace-scoped, cross-tenant delete."
+        },
+        {
+          "text": "Does NOT falsely flag db/rows row-type imports or pure helpers.ts",
+          "passed": true,
+          "evidence": "'Looks suspicious but is actually fine' clears helpers.ts and the repository's Drizzle imports."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 2,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 6,
+        "failed": 0,
+        "total": 6,
+        "time_seconds": 73.3,
+        "tokens": 26020,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Flags contract importing fastify (FastifyRequest) - core-stays-pure",
+          "passed": true,
+          "evidence": "Problem 1.1: framework/presentation type in the domain core."
+        },
+        {
+          "text": "Flags contract importing db/schema Drizzle table - core-stays-pure",
+          "passed": true,
+          "evidence": "Problem 1.3: core reaches outward into infrastructure via $inferSelect."
+        },
+        {
+          "text": "Flags contract holding presentation logic (notificationFromRequest)",
+          "passed": true,
+          "evidence": "Problem 1.2: request-parsing belongs in presentation."
+        },
+        {
+          "text": "Flags reviewer-core importing node:fs and node:child_process",
+          "passed": true,
+          "evidence": "Problems 2.1-2.2: fs reads and execSync in the pure core."
+        },
+        {
+          "text": "Flags reviewer-core importing simple-git - core-no-io-libraries",
+          "passed": true,
+          "evidence": "Problem 2.3: concrete I/O library in the core."
+        },
+        {
+          "text": "Recommends passing file contents / commits in as arguments (keep injected LLMProvider)",
+          "passed": true,
+          "evidence": "Recommends enrichReview(context: EnrichedContext, branch, llm); confirms LLMProvider injection correct."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 3,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.3333,
+        "passed": 2,
+        "failed": 4,
+        "total": 6,
+        "time_seconds": 99.9,
+        "tokens": 27399,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Proposes the layered split modules/webhooks/{routes.ts, service.ts, repository.ts}",
+          "passed": false,
+          "evidence": "Invents a per-module domain/application/infrastructure/presentation SUBFOLDER tree (webhook.entity.ts, webhook.pg.repository.ts, etc.) \u2014 the layers are conceptually right but the file structure does not match DevDigest's flat routes/service/repository house style."
+        },
+        {
+          "text": "Routes = Zod + getContext + delegate; Service orchestrates + workspaceId first",
+          "passed": false,
+          "evidence": "Uses req.workspace.id and manual CreateWebhookRequest.parse(req.body) instead of getContext + the Fastify Zod schema provider; service workspaceId-first is correct but the route pattern is wrong for this codebase."
+        },
+        {
+          "text": "Repository is the only place with Drizzle, every where() workspace-scoped",
+          "passed": true,
+          "evidence": "PgWebhookRepository is the only Drizzle code; every query uses and(eq(workspaceId), ...)."
+        },
+        {
+          "text": "GitHub call via GitHubClient interface from container.github(), NOT new OctokitGitHubClient()",
+          "passed": false,
+          "evidence": "Fabricates its own GithubWebhookPort + GithubWebhookAdapter and a non-existent gh.forWorkspace(workspaceId); never identifies the existing GitHubClient interface / container.github(). Correct DI instinct, wrong (invented) mechanism."
+        },
+        {
+          "text": "New table in db/schema/*.ts + pnpm db:generate (no hand-written migration)",
+          "passed": true,
+          "evidence": "Defines Drizzle table, generates migration (db:generate), explicitly says never hand-write/edit migrations."
+        },
+        {
+          "text": "Shared shapes as Zod contracts in vendor/shared/contracts (both copies); register one line in modules/index.ts",
+          "passed": false,
+          "evidence": "Contracts location hand-waved ('commonly @shared/*'), misses the two-copy vendored @devdigest/shared; registration invents registerWebhooksModule + a registerModules(app, deps) function instead of the real one-line entry in the modules Record."
+        }
+      ],
+      "notes": []
+    }
+  ],
+  "run_summary": {
+    "with_skill": {
+      "pass_rate": {
+        "mean": 1.0,
+        "stddev": 0.0,
+        "min": 1.0,
+        "max": 1.0
+      },
+      "time_seconds": {
+        "mean": 114.5667,
+        "stddev": 24.5606,
+        "min": 93.2,
+        "max": 141.4
+      },
+      "tokens": {
+        "mean": 41796.0,
+        "stddev": 7096.7016,
+        "min": 37440,
+        "max": 49985
+      }
+    },
+    "without_skill": {
+      "pass_rate": {
+        "mean": 0.7778,
+        "stddev": 0.3849,
+        "min": 0.3333,
+        "max": 1.0
+      },
+      "time_seconds": {
+        "mean": 103.4333,
+        "stddev": 32.0464,
+        "min": 73.3,
+        "max": 137.1
+      },
+      "tokens": {
+        "mean": 28557.0,
+        "stddev": 3273.4048,
+        "min": 26020,
+        "max": 32252
+      }
+    },
+    "delta": {
+      "pass_rate": "+0.22",
+      "time_seconds": "+11.1",
+      "tokens": "+13239"
+    }
+  },
+  "notes": [
+    "DETECTION vs CONSTRUCTION split: on the two detection evals (1,2) with-skill and baseline BOTH scored 100% \u2014 general onion knowledge (helped by the auto-injected CLAUDE.md) already finds planted violations. The skill's whole measurable edge came from eval-3 (construction): 100% vs 33%.",
+    "Eval-3 is the discriminating case. Baseline invented a generic domain/application/infrastructure/presentation subfolder tree, fabricated its own GithubWebhookPort + gh.forWorkspace() instead of the real container.github(), and hand-waved the contracts location + module registration. With-skill matched every DevDigest-specific wiring detail.",
+    "Assertions 1-6 of eval-1 and 1-5 of eval-2 are NON-DISCRIMINATING (both configs pass) \u2014 they confirm the fixtures are catchable but don't measure the skill. Consider hardening future fixtures with subtler, DevDigest-specific-only traps (e.g. db/rows vs db/schema nuance, the type-elision loophole, thin-module grandfathering) to make detection evals discriminate.",
+    "Quality gap not captured by pass/fail: with-skill cites exact dependency-cruiser rule names (route-no-direct-db, core-stays-pure, etc.), the known-warn baseline, and the verify command; baseline uses generic vocabulary. Baseline also MISSED the z.infer-duplication issue in eval-2 (called the hand-written interface 'correct').",
+    "COST: with-skill is slower/heavier (reads SKILL.md + rule files). Eval-1 with-skill 141s/50k tok vs baseline 137s/32k tok; eval-2 109s/37k vs 73s/26k. ~1.4x tokens for the guidance \u2014 worth it on construction, marginal on detection.",
+    "CONFOUND: the 'without_skill' subagents still received the project CLAUDE.md, which names some conventions (ESM .js, static registration, do-not-touch vendor/shared). A truly naive baseline would score lower on eval-3; the +0.22 delta is therefore a conservative lower bound on the skill's value."
+  ]
+}

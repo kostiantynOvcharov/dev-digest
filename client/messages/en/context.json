@@ -1,24 +1,72 @@
 {
-  "title": "Project Context",
-  "chunks": "{count} chunks",
-  "reindex": "Re-index",
-  "indexing": "Indexing…",
-  "resync": "Resync",
-  "resyncing": "Resyncing…",
-  "indexStatus": "Index status: {status}",
-  "loadError": "Couldn’t load specs",
-  "kb": "{kb}kb",
+  "crumbWorkspace": "Workspace",
+  "crumbContext": "Project Context",
+  "headingPrefix": "Project Context — ",
+  "subtitle": "Repo-authored markdown under your configured roots (specs, docs, insights) that agents and skills can attach as review grounding.",
+  "refresh": "Refresh",
+  "reindexing": "Indexing…",
+  "docCount": "{count, plural, =1 {# document} other {# documents}}",
+  "status": {
+    "indexed": "Indexed: {count} · last {ago}",
+    "neverIndexed": "Not indexed yet",
+    "loading": "Loading index status…"
+  },
+  "column": {
+    "coverage": "Coverage"
+  },
+  "usedBy": "Used by {count, plural, =1 {# agent} other {# agents}}",
+  "usedByHint": "Counts agents that attach this doc directly and agents that inherit it via a linked skill.",
+  "size": "{kb} KB",
+  "type": {
+    "specs": "specs",
+    "docs": "docs",
+    "insights": "insights"
+  },
+  "coveragePlaceholder": "—",
+  "tab": {
+    "title": "Project context",
+    "attachedCount": "{attached} of {total} attached",
+    "filterPlaceholder": "Filter docs…",
+    "orderHint": "Order matters — attached docs are injected in this order. Toggle to attach; drag or use the arrows to reorder.",
+    "attachedSection": "Attached (drag to reorder)",
+    "availableSection": "Available",
+    "empty": "No context docs found. Index this repo's markdown on the Project Context page first.",
+    "noRepo": "Select a repo to attach its context docs.",
+    "loading": "Loading context docs…",
+    "noResults": "No docs match your filter.",
+    "tokens": "~{count} tok",
+    "totalTokens": "~{count} tokens total",
+    "missing": "missing — not in the latest index",
+    "moveUp": "Move up",
+    "moveDown": "Move down",
+    "preview": "Preview",
+    "overflowWarning": "Attached docs (~{count} tokens) exceed the {threshold}-token warning threshold. Nothing is dropped or truncated — trim attachments to reduce prompt size."
+  },
+  "preview": {
+    "heading": "Preview",
+    "placeholder": "Select a document to preview it.",
+    "unavailable": "Preview content isn’t available for this document yet.",
+    "close": "Close preview"
+  },
+  "loadError": "Couldn’t load project context",
+  "reindexError": "Re-index failed",
   "empty": {
-    "title": "No spec files yet",
-    "body": "Drop your PRDs, tech specs, and acceptance criteria under .devdigest/specs/. Every agent and the PR brief read them as grounding context."
+    "notIndexed": {
+      "title": "Not indexed yet",
+      "body": "This repo hasn’t been scanned for context docs. Run a re-index to discover markdown under your configured roots (specs, docs, insights).",
+      "cta": "Re-index now"
+    },
+    "noDocs": {
+      "title": "No context docs found",
+      "body": "No markdown files were found under the configured root folders (specs, docs, insights). Add some, then re-index.",
+      "cta": "Re-index"
+    }
   },
-  "mode": {
-    "preview": "preview",
-    "edit": "edit"
-  },
-  "editor": {
-    "loadError": "Couldn’t load spec",
-    "save": "Save",
-    "saving": "Saving…"
+  "relative": {
+    "justNow": "just now",
+    "seconds": "{count}s ago",
+    "minutes": "{count}m ago",
+    "hours": "{count}h ago",
+    "days": "{count}d ago"
   }
 }

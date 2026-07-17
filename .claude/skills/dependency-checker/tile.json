@@ -1,0 +1,11 @@
+{
+  "name": "devdigest/dependency-checker",
+  "version": "0.1.0",
+  "private": true,
+  "summary": "Analyzes every dependency of the DevDigest repo and its packages (client, server, reviewer-core, e2e, devdigest-mcp, evals) and produces one structured report: a Mermaid dependency graph, an installed-size breakdown, prioritized findings (P0/P1/P2/Info), and concrete recommendations. Distinguishes external npm dependencies from internal path-alias (non-monorepo) links, flags version drift, unused/duplicate/heavy packages, deep-relative cross-package coupling, and reviewer-core purity breaks. Read-only and advisory — proposes changes, never installs/upgrades/removes. Trigger terms: dependency check, node_modules size, bloat, unused dependency, version drift, dependency graph, coupling between packages, what to upgrade or remove.",
+  "skills": {
+    "dependency-checker": {
+      "path": "SKILL.md"
+    }
+  }
+}

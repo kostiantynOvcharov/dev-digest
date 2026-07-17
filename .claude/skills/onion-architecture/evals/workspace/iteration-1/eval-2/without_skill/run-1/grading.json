@@ -1,0 +1,43 @@
+{
+  "eval_id": 2,
+  "config": "without_skill",
+  "expectations": [
+    {
+      "text": "Flags contract importing fastify (FastifyRequest) - core-stays-pure",
+      "passed": true,
+      "evidence": "Problem 1.1: framework/presentation type in the domain core."
+    },
+    {
+      "text": "Flags contract importing db/schema Drizzle table - core-stays-pure",
+      "passed": true,
+      "evidence": "Problem 1.3: core reaches outward into infrastructure via $inferSelect."
+    },
+    {
+      "text": "Flags contract holding presentation logic (notificationFromRequest)",
+      "passed": true,
+      "evidence": "Problem 1.2: request-parsing belongs in presentation."
+    },
+    {
+      "text": "Flags reviewer-core importing node:fs and node:child_process",
+      "passed": true,
+      "evidence": "Problems 2.1-2.2: fs reads and execSync in the pure core."
+    },
+    {
+      "text": "Flags reviewer-core importing simple-git - core-no-io-libraries",
+      "passed": true,
+      "evidence": "Problem 2.3: concrete I/O library in the core."
+    },
+    {
+      "text": "Recommends passing file contents / commits in as arguments (keep injected LLMProvider)",
+      "passed": true,
+      "evidence": "Recommends enrichReview(context: EnrichedContext, branch, llm); confirms LLMProvider injection correct."
+    }
+  ],
+  "notes": "6/6 on the planted set, BUT: missed the z.infer-duplication issue (explicitly called the hand-written NotificationInput interface 'exactly what a contracts module should hold'), and its fix for the db/schema import was generic ('define the row type in the core') rather than DevDigest's actual convention (db/rows.ts). No rule names.",
+  "summary": {
+    "pass_rate": 1.0,
+    "passed": 6,
+    "failed": 0,
+    "total": 6
+  }
+}

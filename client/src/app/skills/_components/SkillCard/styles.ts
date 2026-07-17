@@ -1,0 +1,60 @@
+import type { CSSProperties } from "react";
+
+/** Co-located styles for SkillCard (mirrors AgentCard). */
+export const s = {
+  card: (active: boolean, enabled: boolean): CSSProperties => ({
+    padding: 14,
+    marginBottom: 10,
+    borderRadius: 9,
+    border: `1px solid ${active ? "var(--accent)" : "var(--border)"}`,
+    background: active ? "var(--bg-hover)" : "var(--bg-surface)",
+    cursor: "pointer",
+    opacity: enabled ? 1 : 0.6,
+    transition: "border-color 120ms ease",
+  }),
+  headerRow: { display: "flex", alignItems: "center", gap: 8 } satisfies CSSProperties,
+  iconBox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "var(--bg-hover)",
+    color: "var(--accent)",
+    flexShrink: 0,
+  } satisfies CSSProperties,
+  name: {
+    flex: 1,
+    fontWeight: 650,
+    fontSize: 14,
+    fontFamily: "var(--font-mono, monospace)",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  } satisfies CSSProperties,
+  trashBtn: (busy: boolean): CSSProperties => ({
+    background: "none",
+    border: "none",
+    cursor: busy ? "not-allowed" : "pointer",
+    color: "var(--text-muted)",
+    display: "inline-flex",
+    padding: 4,
+  }),
+  description: {
+    fontSize: 13,
+    color: "var(--text-secondary)",
+    margin: "10px 0",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  } satisfies CSSProperties,
+  badgeRow: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" } satisfies CSSProperties,
+  usage: {
+    marginTop: 10,
+    fontSize: 12,
+    color: "var(--text-muted)",
+    display: "flex",
+    gap: 10,
+  } satisfies CSSProperties,
+} as const;

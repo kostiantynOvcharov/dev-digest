@@ -1,0 +1,13 @@
+{
+  "eval_id": 3,
+  "eval_name": "place-new-module",
+  "prompt": "Plan a new 'webhooks' feature: store subscriptions in Postgres (workspace-scoped) + call GitHub to register the webhook. Which files, what goes in each, how to wire it.",
+  "assertions": [
+    { "text": "Proposes the layered split modules/webhooks/{routes.ts, service.ts, repository.ts}", "type": "quality" },
+    { "text": "Routes = Zod + getContext + delegate, no DB; Service orchestrates + takes workspaceId first", "type": "quality" },
+    { "text": "Repository is the only place with Drizzle, and every where() is workspace-scoped", "type": "quality" },
+    { "text": "GitHub call via the GitHubClient interface from container.github(), NOT new OctokitGitHubClient()", "type": "detection" },
+    { "text": "New table in db/schema/*.ts + pnpm db:generate (no hand-written migration)", "type": "quality" },
+    { "text": "Shared shapes as Zod contracts in vendor/shared/contracts; register module with one line in modules/index.ts", "type": "quality" }
+  ]
+}

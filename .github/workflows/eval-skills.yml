@@ -1,0 +1,87 @@
+# Harness evals — SKILLS tier (content-only).
+#
+# Fires only when a skill (or its evals) changes. Detects WHICH skills changed, runs just those
+# that have written evals, and prints "SKIP" for changed skills with no evals (never red for that).
+#
+# Content-only tier: skillTask + the LLM judge call OpenRouter DIRECTLY (src/runtime/run-openrouter.ts),
+# so no LiteLLM proxy is needed here — cheapest of the three. DeepSeek is fine for content.
+#
+# Model switch (no UI): defaults live in `env` below; override per manual run via the
+# workflow_dispatch inputs. Requires the OPENROUTER_API_KEY repo Actions secret.
+name: eval-skills
+
+on:
+  pull_request:
+    paths:
+      - '.claude/skills/**'
+      - 'evals/skills/**'
+      - '.github/workflows/eval-skills.yml'
+  workflow_dispatch:
+    inputs:
+      eval_model:
+        description: 'Model under test (OpenRouter slug)'
+        default: 'deepseek/deepseek-chat'
+      judge_model:
+        description: 'Judge model (OpenRouter slug)'
+        default: 'deepseek/deepseek-chat'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eval-skills-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  skills:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: evals
+    env:
+      EVAL_BACKEND: openrouter
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      EVAL_MODEL: ${{ inputs.eval_model || 'deepseek/deepseek-chat' }}
+      EVAL_JUDGE_MODEL: ${{ inputs.judge_model || 'deepseek/deepseek-chat' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0            # need the merge base to diff the PR
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: evals/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+
+      - name: Detect changed skills
+        id: detect
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ -n "$BASE_SHA" ]; then
+            CHANGED_FILES="$(git diff --name-only "$BASE_SHA...$HEAD_SHA")"
+          else
+            CHANGED_FILES=""          # workflow_dispatch: no PR diff → run nothing, rely on override below
+          fi
+          export CHANGED_FILES
+          node scripts/ci-detect.mjs
+
+      - name: Run skill evals (or skip)
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          PATHS="${{ steps.detect.outputs.skills_paths }}"
+          if [ -n "$PATHS" ]; then
+            echo "Running skill evals: $PATHS"
+            pnpm eval --retry=1 $PATHS
+          elif [ "$EVENT" = "workflow_dispatch" ]; then
+            echo "Manual run (no PR diff) — running the full skills tier."
+            pnpm eval:skills --retry=1
+          else
+            echo "SKIP — no changed skills have evals; nothing to run."
+          fi

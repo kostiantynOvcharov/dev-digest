@@ -5,6 +5,8 @@
     "suggestedFix": "Suggested fix",
     "accept": "Accept",
     "dismiss": "Dismiss",
+    "turnIntoEvalCase": "Turn into eval case",
+    "turnIntoEvalCaseHint": "Decide (accept or dismiss) this finding to turn it into an eval case",
     "learn": "Learn",
     "replyToAuthor": "Reply to author",
     "replyPlaceholder": "Reply to the author about this finding…",

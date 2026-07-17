@@ -8,6 +8,16 @@ vi.mock("../../../../../../../lib/hooks/reviews", () => ({
   useFindingAction: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
+// FindingsPanel renders FindingCard, which calls useEvalCaseSeed — mock the eval
+// hooks so no QueryClient / network is needed for these smoke tests. Findings
+// here are undecided, so the seed is disabled and the editor never mounts.
+vi.mock("../../../../../../../lib/hooks/eval", () => ({
+  useEvalCaseSeed: () => ({ data: undefined }),
+  useRunEvalCase: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useCreateEvalCaseFromInput: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUpdateEvalCase: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}));
+
 import { FindingsPanel } from "./FindingsPanel";
 
 afterEach(cleanup);

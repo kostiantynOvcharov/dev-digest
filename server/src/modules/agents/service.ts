@@ -1,6 +1,7 @@
 import type { Container } from '../../platform/container.js';
 import type {
   Agent,
+  AgentContextLink,
   AgentSkillLink,
   AgentVersion,
   CiFailOn,
@@ -169,6 +170,101 @@ export class AgentsService {
     const resolvedOrder = order ?? existing.length;
     await this.repo.linkSkill(agentId, skillId, resolvedOrder);
     return this.skillLinks(agentId);
+  }
+
+  // ---- Context docs (SPEC-01) — attach/read markdown docs on an agent -------
+
+  /** Attached context docs for an agent as AgentContextLink[] (ordered), each
+   * flagged `missing` when its path is no longer in the doc-index snapshot.
+   * Workspace-scoped: undefined when the agent isn't in this workspace (→ 404). */
+  async contextLinks(
+    workspaceId: string,
+    agentId: string,
+  ): Promise<AgentContextLink[] | undefined> {
+    const agent = await this.repo.getById(workspaceId, agentId);
+    if (!agent) return undefined;
+    return this.buildContextLinks(workspaceId, agentId);
+  }
+
+  /** Read the attached docs + derive the `missing` flag against the snapshot. */
+  private async buildContextLinks(
+    workspaceId: string,
+    agentId: string,
+  ): Promise<AgentContextLink[]> {
+    const docs = await this.repo.linkedContextDocs(agentId);
+    const existing = await this.repo.existingSnapshotPaths(
+      workspaceId,
+      docs.map((d) => d.path),
+    );
+    return docs.map((d) => ({
+      agent_id: agentId,
+      path: d.path,
+      order: d.order,
+      missing: !existing.has(d.path),
+    }));
+  }
+
+  /**
+   * Set / reorder the whole ordered set of attached docs. Replaces the set in the
+   * given order. Returns the resulting ordered links (undefined → 404).
+   */
+  async setContextDocs(
+    workspaceId: string,
+    agentId: string,
+    paths: string[],
+  ): Promise<AgentContextLink[] | undefined> {
+    const agent = await this.repo.getById(workspaceId, agentId);
+    if (!agent) return undefined;
+    await this.repo.setContextDocs(agentId, paths);
+    return this.buildContextLinks(workspaceId, agentId);
+  }
+
+  /** Attach a single doc path (append or set order) — additive to existing. */
+  async linkContextDoc(
+    workspaceId: string,
+    agentId: string,
+    path: string,
+    order?: number,
+  ): Promise<AgentContextLink[] | undefined> {
+    const agent = await this.repo.getById(workspaceId, agentId);
+    if (!agent) return undefined;
+    const existing = await this.repo.linkedContextDocs(agentId);
+    const resolvedOrder = order ?? existing.length;
+    await this.repo.linkContextDoc(agentId, path, resolvedOrder);
+    return this.buildContextLinks(workspaceId, agentId);
+  }
+
+  /**
+   * Resolve the ordered, deduped set of context-doc repo-relative PATHS an agent
+   * contributes (Decision D2), FRESH: each ENABLED linked skill's docs FIRST (in
+   * skill order, then that skill's configured doc order), THEN the agent's own
+   * attached docs. Deduped by path keeping the FIRST (skill) occurrence, so a doc
+   * attached to both a skill and the agent keeps its earlier skill position.
+   *
+   * Extracted from the review run-executor's inline merge so the Why+Risk brief
+   * and the review run can never drift on which docs an agent injects (SPEC-02
+   * X-review #3). The caller reads each path within a within-clone path-traversal
+   * guard — this returns paths only, never file contents, and is NOT
+   * workspace-scoped (callers already hold the agent via a scoped lookup).
+   */
+  async resolveContextDocPaths(agentId: string): Promise<string[]> {
+    const linkedSkills = await this.repo.linkedSkills(agentId);
+    const enabledLinkedSkills = linkedSkills.filter((l) => l.skill.enabled);
+
+    const ordered: string[] = [];
+    const seen = new Set<string>();
+    const push = (p: string) => {
+      if (seen.has(p)) return;
+      seen.add(p);
+      ordered.push(p);
+    };
+    // Cross-module data (skill docs) is reached through the container-exposed
+    // repo, never a skills-module code import — per the onion boundary rules.
+    for (const { skill } of enabledLinkedSkills) {
+      for (const d of await this.container.skillsRepo.linkedContextDocs(skill.id)) push(d.path);
+    }
+    for (const d of await this.repo.linkedContextDocs(agentId)) push(d.path);
+    return ordered;
   }
 
   /**

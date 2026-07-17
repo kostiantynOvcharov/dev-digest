@@ -1,0 +1,43 @@
+{
+  "eval_id": 2,
+  "config": "with_skill",
+  "expectations": [
+    {
+      "text": "Flags contract importing fastify (FastifyRequest) - core-stays-pure",
+      "passed": true,
+      "evidence": "Problem 1: names core-stays-pure on the fastify import."
+    },
+    {
+      "text": "Flags contract importing db/schema Drizzle table - core-stays-pure",
+      "passed": true,
+      "evidence": "Problem 2: core-stays-pure; move NotificationRow to db/rows.ts."
+    },
+    {
+      "text": "Flags contract holding presentation logic (notificationFromRequest)",
+      "passed": true,
+      "evidence": "Problem 3: request-parsing is presentation work; the real (non-elidable) leak."
+    },
+    {
+      "text": "Flags reviewer-core importing node:fs and node:child_process",
+      "passed": true,
+      "evidence": "Problems 1-2: core-no-node-io-builtins on fs and child_process."
+    },
+    {
+      "text": "Flags reviewer-core importing simple-git - core-no-io-libraries",
+      "passed": true,
+      "evidence": "Problem 3: core-no-io-libraries."
+    },
+    {
+      "text": "Recommends passing file contents / commits in as arguments (keep injected LLMProvider)",
+      "passed": true,
+      "evidence": "Fix rewrites enrichReview to take EnrichedContext + branch; confirms LLMProvider injection is correct."
+    }
+  ],
+  "notes": "6/6. Bonus differentiators: catches the z.infer-duplication convention (NotificationInput), names db/rows.ts as the correct home, and explains the tsPreCompilationDeps type-elision loophole + the 'reviewer-core must stay at 0 violations' iron rule.",
+  "summary": {
+    "pass_rate": 1.0,
+    "passed": 6,
+    "failed": 0,
+    "total": 6
+  }
+}

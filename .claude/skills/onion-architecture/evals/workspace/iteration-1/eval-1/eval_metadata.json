@@ -1,0 +1,14 @@
+{
+  "eval_id": 1,
+  "eval_name": "detect-layered-module-violations",
+  "prompt": "Review a new server/src/modules/notifications/ module (routes.ts, service.ts, repository.ts, helpers.ts) for architecture / layering problems before opening a PR.",
+  "assertions": [
+    { "text": "Flags routes.ts querying the DB directly (db.select/db.update) — route-no-direct-db", "type": "detection" },
+    { "text": "Flags service.ts new-ing a concrete OctokitGitHubClient instead of using container.github() interface", "type": "detection" },
+    { "text": "Flags service.ts importing drizzle-orm / querying the DB directly in countUnread — service-no-direct-db", "type": "detection" },
+    { "text": "Flags service.ts importing the sibling agents/repository.js — no-cross-module-internals (use container.agentsRepo)", "type": "detection" },
+    { "text": "Flags repository.ts importing from adapters/ (renderMarkdown) — repository-no-adapters", "type": "detection" },
+    { "text": "Flags repository.ts deleteById missing the workspaceId predicate (cross-tenant / tenancy guard)", "type": "detection" },
+    { "text": "Does NOT falsely flag the legitimate db/rows row-type imports or the pure helpers.ts", "type": "false-positive" }
+  ]
+}

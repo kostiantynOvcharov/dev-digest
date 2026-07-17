@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { Finding, Verdict } from './findings.js';
-import { Intent, SmartDiff } from './brief.js';
+import { Intent, SmartDiff, BlastRadius, Brief } from './brief.js';
 
 /**
  * A2 — Review-Core API surface contracts. These extend the core
@@ -63,3 +63,73 @@ export type PrIntentRecord = z.infer<typeof PrIntentRecord>;
 /** Smart-diff response for a PR (the SmartDiff). */
 export const SmartDiffResponse = SmartDiff;
 export type SmartDiffResponse = z.infer<typeof SmartDiffResponse>;
+
+/** A prior PR that touched one of the changed files (blast "prior PRs"). */
+export const BlastPriorPr = z.object({
+  id: z.string(),
+  number: z.number().int(),
+  title: z.string(),
+  opened_at: z.string().nullable(),
+  status: z.string(),
+});
+export type BlastPriorPr = z.infer<typeof BlastPriorPr>;
+
+/**
+ * Blast-radius response for a PR (`GET /pulls/:id/blast`): the impact map
+ * (`BlastRadius`) plus the repo-intel index `status`/`degraded`/`reason` so the
+ * UI can render a partial/degraded badge, top-level `counts` for the stat row,
+ * and `prior_prs` (other PRs that touched the same files). Read straight from
+ * the pre-built repo-intel index + the PR history — no model call.
+ * `status: 'none'` means there's no usable index (→ empty state).
+ */
+export const BlastRadiusResponse = BlastRadius.extend({
+  status: z.enum(['full', 'partial', 'degraded', 'failed', 'none']),
+  degraded: z.boolean(),
+  reason: z.string().nullable(),
+  counts: z.object({
+    symbols: z.number().int(),
+    callers: z.number().int(),
+    endpoints: z.number().int(),
+    crons: z.number().int(),
+  }),
+  prior_prs: z.array(BlastPriorPr),
+});
+export type BlastRadiusResponse = z.infer<typeof BlastRadiusResponse>;
+
+/**
+ * Why+Risk-brief response (`GET`/`POST /pulls/:id/brief`): the grounded `Brief`
+ * (`null` when no brief is cached → empty state) plus the metadata the card
+ * renders — `head_sha` the brief was generated against, the server-computed
+ * `outdated` flag (current PR head ≠ stored `head_sha`), `generated_at`, and the
+ * optional observability fields (`model`/`cost`/`tokens`) read from the LLM
+ * outcome. Mirrors `BlastRadiusResponse`: a core contract + UI/observability
+ * fields around it. The server-only `inputs` snapshot (see `BriefStored`) is NOT
+ * part of this transport shape.
+ */
+export const BriefResponse = z.object({
+  brief: Brief.nullable(),
+  head_sha: z.string(),
+  outdated: z.boolean(),
+  generated_at: z.string(),
+  model: z.string().optional(),
+  cost: z.number().nullable().optional(),
+  tokens: z.object({ in: z.number().int(), out: z.number().int() }).optional(),
+});
+export type BriefResponse = z.infer<typeof BriefResponse>;
+
+/**
+ * Server-only persisted shape stored in `pr_brief.json` — the grounded `Brief`
+ * plus generation metadata and an `inputs` snapshot (a permissive record of the
+ * deterministic inputs actually fed to the model) kept for reproducibility /
+ * debugging, since the brief has no run-trace like reviews do. NOT returned to
+ * the client (the response is derived into `BriefResponse`).
+ */
+export const BriefStored = Brief.extend({
+  head_sha: z.string(),
+  generated_at: z.string(),
+  model: z.string().optional(),
+  cost: z.number().nullable().optional(),
+  tokens: z.object({ in: z.number().int(), out: z.number().int() }).optional(),
+  inputs: z.record(z.string(), z.unknown()),
+});
+export type BriefStored = z.infer<typeof BriefStored>;

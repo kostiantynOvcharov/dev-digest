@@ -4,8 +4,9 @@
 
 import React from "react";
 import { useTranslations } from "next-intl";
-import { Icon } from "@devdigest/ui";
+import { Badge, Icon } from "@devdigest/ui";
 import type { PrFile } from "@/lib/types";
+import type { FindingRecord } from "@devdigest/shared";
 import { AUTO_EXPAND_MAX_LINES } from "../constants";
 import { parsePatch, type Line } from "../helpers";
 import {
@@ -30,11 +31,35 @@ function threadsForLine(ln: Line, matched: Map<string, CommentThread[]>): Commen
   return out;
 }
 
-export function FileCard({ file, commenting }: { file: PrFile; commenting?: DiffCommentApi }) {
+export function FileCard({
+  file,
+  commenting,
+  defaultOpen,
+  lineFindings,
+  onFindingClick,
+  headerExtra,
+  summary,
+}: {
+  file: PrFile;
+  commenting?: DiffCommentApi;
+  /** Force initial open/closed; falls back to the size heuristic when omitted
+   *  (Smart Diff uses it to collapse the boilerplate group by default). */
+  defaultOpen?: boolean;
+  /** Smart Diff overlay: findings keyed by NEW line number for this file. */
+  lineFindings?: Map<number, FindingRecord>;
+  /** Click a per-line severity badge → deep-link to that finding. */
+  onFindingClick?: (findingId: string) => void;
+  /** Extra header content (e.g. a file-level "N findings" badge). */
+  headerExtra?: React.ReactNode;
+  /** Smart Diff "What this does" one-line summary (model output — rendered as
+   *  plain text, never HTML). Omitted/null/empty → no badge, no body line. */
+  summary?: string | null;
+}) {
   const t = useTranslations("shell");
   const [open, setOpen] = React.useState(
-    (file.additions ?? 0) + (file.deletions ?? 0) <= AUTO_EXPAND_MAX_LINES
+    defaultOpen ?? (file.additions ?? 0) + (file.deletions ?? 0) <= AUTO_EXPAND_MAX_LINES
   );
+  const summaryText = summary?.trim() || null;
   const lines = React.useMemo(() => parsePatch(file.patch), [file.patch]);
 
   // Group this file's comments into threads, then split into ones we can anchor
@@ -72,9 +97,22 @@ export function FileCard({ file, commenting }: { file: PrFile; commenting?: Diff
             {commentCount}
           </span>
         )}
+        {headerExtra}
+        {summaryText && (
+          <Badge icon="Sparkles" color="var(--accent-text)" bg="var(--accent-bg)">
+            {t("diffViewer.summaryBadge")}
+          </Badge>
+        )}
       </div>
       {open && (
         <div style={s.fileBody}>
+          {summaryText && (
+            <div style={s.summaryLine}>
+              <Icon.Sparkles size={12} style={s.summaryIcon} />
+              <span style={s.summaryLabel}>{t("diffViewer.whatThisDoes")}:</span>
+              <span style={s.summaryText}>{summaryText}</span>
+            </div>
+          )}
           {lines.length === 0 ? (
             <div style={s.noDiff}>{t("diffViewer.noDiffText")}</div>
           ) : (
@@ -85,6 +123,8 @@ export function FileCard({ file, commenting }: { file: PrFile; commenting?: Diff
                 path={file.path}
                 threads={threadsForLine(ln, matched)}
                 commenting={commenting}
+                finding={ln.newNo != null ? lineFindings?.get(ln.newNo) : undefined}
+                onFindingClick={onFindingClick}
               />
             ))
           )}
