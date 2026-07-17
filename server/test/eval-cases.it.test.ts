@@ -343,6 +343,83 @@ d('eval cases (Testcontainers pg)', () => {
     await a.close();
   });
 
+  it('create from payload: skill owner persists a skill-owned case + lists under it', async () => {
+    const a = await app();
+    const skillId = (
+      await a.inject({
+        method: 'POST',
+        url: '/skills',
+        payload: { name: `rubric-${seq++}`, type: 'custom', body: '# Rule\nNo hardcoded secrets.' },
+      })
+    ).json().id as string;
+
+    const res = await a.inject({
+      method: 'POST',
+      url: '/eval-cases',
+      payload: {
+        owner_kind: 'skill',
+        owner_id: skillId,
+        name: 'Skill case',
+        input_diff: '@@ -1 +1 @@\n+x',
+        expected_output: [],
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const c = res.json();
+    expect(c.owner_kind).toBe('skill');
+    expect(c.owner_id).toBe(skillId);
+
+    // Persisted under the skill owner + appears in its list.
+    const rows = await pg.handle.db
+      .select()
+      .from(t.evalCases)
+      .where(and(eq(t.evalCases.ownerId, skillId), eq(t.evalCases.ownerKind, 'skill')));
+    expect(rows.length).toBe(1);
+    const list = (
+      await a.inject({ method: 'GET', url: `/eval-cases?owner_kind=skill&owner_id=${skillId}` })
+    ).json();
+    expect(list.some((row: { id: string }) => row.id === c.id)).toBe(true);
+
+    await a.close();
+  });
+
+  it('create from payload: skill owner outside the workspace → 404, nothing written', async () => {
+    const a = await app();
+    const [otherWs] = await pg.handle.db
+      .insert(t.workspaces)
+      .values({ name: 'other-skill' })
+      .returning();
+    const [foreignSkill] = await pg.handle.db
+      .insert(t.skills)
+      .values({
+        workspaceId: otherWs!.id,
+        name: 'Foreign skill',
+        description: 'x',
+        type: 'custom',
+        source: 'manual',
+        body: 'x',
+      })
+      .returning();
+
+    const before = await pg.handle.db.select().from(t.evalCases);
+    const res = await a.inject({
+      method: 'POST',
+      url: '/eval-cases',
+      payload: {
+        owner_kind: 'skill',
+        owner_id: foreignSkill!.id,
+        name: 'Should not persist',
+        input_diff: '',
+        expected_output: [],
+      },
+    });
+    expect(res.statusCode).toBe(404);
+    const after = await pg.handle.db.select().from(t.evalCases);
+    expect(after.length).toBe(before.length);
+
+    await a.close();
+  });
+
   it('create from payload: owner agent outside the workspace → 404, nothing written', async () => {
     const a = await app();
     const [otherWs] = await pg.handle.db

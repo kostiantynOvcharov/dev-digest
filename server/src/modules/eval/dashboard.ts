@@ -140,35 +140,59 @@ export class EvalDashboardService {
   }
 
   /**
-   * Run history for one agent, grouped by `run_group_id`, newest first (AC-11).
-   * Tenancy-checked: the agent must belong to the workspace, else not-found —
-   * a deleted agent yields a graceful 404, never a 500.
+   * Verify an eval-case owner (agent OR skill) belongs to the workspace, else
+   * throw not-found — a deleted/foreign owner yields a graceful 404, never a 500.
+   * The cross-module reads go through the container (composition root), never a
+   * sibling module's code (onion boundary).
    */
-  async history(workspaceId: string, agentId: string): Promise<EvalRunGroupSummary[]> {
-    const agent = await this.container.agents.get(workspaceId, agentId);
-    if (!agent) throw new NotFoundError('Agent not found');
-    const groups = await this.repo.listRunGroups(workspaceId, {
-      ownerKind: 'agent',
-      ownerId: agentId,
-    });
+  private async assertOwner(
+    workspaceId: string,
+    ownerId: string,
+    ownerKind: EvalOwnerKind,
+  ): Promise<void> {
+    const found =
+      ownerKind === 'skill'
+        ? await this.container.skillsRepo.getById(workspaceId, ownerId)
+        : await this.container.agents.get(workspaceId, ownerId);
+    if (!found) throw new NotFoundError(ownerKind === 'skill' ? 'Skill not found' : 'Agent not found');
+  }
+
+  /**
+   * Run history for one owner (agent by default, or a skill via `ownerKind`),
+   * grouped by `run_group_id`, newest first (AC-11). Tenancy-checked: the owner
+   * must belong to the workspace, else not-found — never a 500.
+   */
+  async history(
+    workspaceId: string,
+    ownerId: string,
+    ownerKind: EvalOwnerKind = 'agent',
+  ): Promise<EvalRunGroupSummary[]> {
+    await this.assertOwner(workspaceId, ownerId, ownerKind);
+    const groups = await this.repo.listRunGroups(workspaceId, { ownerKind, ownerId });
     // Repository returns ASC (oldest → newest); history reads newest first.
     return groups.map(toGroupSummary).reverse();
   }
 
   /**
-   * The eval dashboard (AC-11/AC-12). With `ownerId` → that agent's detail;
-   * without → a workspace overview whose `current`/`delta`/`trend`/`alert` track
-   * the most recently-run owner while `recent_runs` spans ALL agents. Every read
-   * is workspace-scoped, so a foreign/deleted owner_id simply yields empty data.
+   * The eval dashboard (AC-11/AC-12). With `ownerId` → that owner's detail (an
+   * agent by default, or a skill via `ownerKind`); without → a workspace overview
+   * whose `current`/`delta`/`trend`/`alert` track the most recently-run owner
+   * while `recent_runs` spans ALL owners. The detail path is tenancy-checked (a
+   * foreign/deleted owner → 404); every read is workspace-scoped.
    */
-  async dashboard(workspaceId: string, ownerId?: string): Promise<EvalDashboard> {
+  async dashboard(
+    workspaceId: string,
+    ownerId?: string,
+    ownerKind: EvalOwnerKind = 'agent',
+  ): Promise<EvalDashboard> {
     if (ownerId) {
+      await this.assertOwner(workspaceId, ownerId, ownerKind);
       const [groups, recent, casesTotal] = await Promise.all([
-        this.repo.listRunGroups(workspaceId, { ownerKind: 'agent', ownerId }),
+        this.repo.listRunGroups(workspaceId, { ownerKind, ownerId }),
         this.repo.listRecentRuns(workspaceId, { ownerId, limit: RECENT_RUNS_LIMIT }),
-        this.repo.countCases(workspaceId, { ownerKind: 'agent', ownerId }),
+        this.repo.countCases(workspaceId, { ownerKind, ownerId }),
       ]);
-      return this.build(groups, recent, casesTotal, 'agent', ownerId);
+      return this.build(groups, recent, casesTotal, ownerKind, ownerId);
     }
 
     const [allGroups, recent, casesTotal] = await Promise.all([

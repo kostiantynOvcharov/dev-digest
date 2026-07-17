@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type {
-  Agent,
   EvalPerTrace,
   EvalRun,
   Finding,
   FindingCategory,
   LLMProvider,
+  ReviewStrategy,
   Severity,
   UnifiedDiff,
 } from '@devdigest/shared';
@@ -14,7 +14,8 @@ import { reviewPullRequest } from '@devdigest/reviewer-core';
 import type { Container } from '../../platform/container.js';
 import { NotFoundError } from '../../platform/errors.js';
 import { parseUnifiedDiff } from '../../adapters/git/diff-parser.js';
-import { EvalRepository } from './repository.js';
+import { resolveFeatureModel } from '../settings/feature-models.js';
+import { EvalRepository, type EvalCaseRow } from './repository.js';
 import { passCase, score, type ExpectedFinding } from './scoring.js';
 
 /**
@@ -124,7 +125,7 @@ export interface RunCaseResult {
   cost_usd: number | null;
 }
 
-/** The per-case inputs a single execution needs (agent config is passed separately). */
+/** The per-case inputs a single execution needs (owner config is passed separately). */
 interface RunCaseInput {
   inputDiff: string;
   inputMeta: unknown;
@@ -132,6 +133,32 @@ interface RunCaseInput {
   /** Engine session id (`eval:<group>:<case>` for a batch, `eval:once:<uuid>` ephemeral). */
   sessionId: string;
 }
+
+/**
+ * The owner-agnostic execution config for ONE case — everything the engine call
+ * needs that does NOT vary per case. An AGENT run builds it from the agent's own
+ * provider/model/system_prompt/strategy + linked skills; a SKILL run builds it
+ * from the workspace `conformance` feature model + a constant reviewer preamble
+ * with the skill body as the sole injected rubric. `runOneCase` reads only this,
+ * so both owner kinds share the identical scoring/error path.
+ */
+interface RunContext {
+  llm: LLMProvider;
+  model: string;
+  systemPrompt: string;
+  skills: string[];
+  strategy?: ReviewStrategy;
+}
+
+/**
+ * The constant base reviewer preamble a SKILL eval runs under (D: a skill has no
+ * provider/model — it is a rubric injected into a reviewer prompt). The model is
+ * held constant via the workspace `conformance` feature model while the SKILL
+ * body varies, so a run's metrics move with the rubric, not the prompt.
+ */
+const BASE_PREAMBLE =
+  'You are a code reviewer. Apply the following rule/rubric to the diff and report every ' +
+  'finding it implies as structured findings. If the rubric implies no finding, return an empty list.';
 
 export class EvalRunner {
   private repo: EvalRepository;
@@ -150,12 +177,7 @@ export class EvalRunner {
     if (!agent) throw new NotFoundError('Agent not found');
 
     const cases = await this.repo.listCasesByOwner(workspaceId, 'agent', agentId);
-
-    // Snapshot the agent's version + prompt ONCE — identical across the batch so
-    // a later prompt edit never rewrites the story of this run (AC-6/AC-10).
     const runGroupId = randomUUID();
-    const agentVersion = agent.version;
-    const systemPrompt = agent.system_prompt;
 
     // Empty set → empty aggregate, ZERO LLM calls, no provider resolution.
     if (cases.length === 0) return emptyAggregate();
@@ -171,6 +193,72 @@ export class EvalRunner {
       .filter((l) => l.skill.enabled)
       .map((l) => `### ${l.skill.name}\n\n${l.skill.body}`);
 
+    // Snapshot the agent's version + prompt ONCE — identical across the batch so
+    // a later prompt edit never rewrites the story of this run (AC-6/AC-10).
+    const ctx: RunContext = {
+      llm,
+      model: agent.model,
+      systemPrompt: agent.system_prompt,
+      skills,
+      strategy: agent.strategy,
+    };
+    return this.runBatch(cases, runGroupId, ctx, {
+      agentVersion: agent.version,
+      systemPrompt: agent.system_prompt,
+    });
+  }
+
+  /**
+   * Run every eval case owned by a SKILL and return the `EvalRun` aggregate.
+   * A skill has NO provider/model — it is a rubric injected into a reviewer
+   * prompt (D). So the model is resolved via the workspace `conformance` feature
+   * model (held constant while the SKILL body varies) and the skill body is the
+   * sole injected rubric under the constant `BASE_PREAMBLE`. Tenancy (AC-15): the
+   * skill must belong to the caller's workspace, else not-found and NO LLM call.
+   * The stored `eval_runs` snapshot is the skill's identity (`agent_version =
+   * skill.version`, `system_prompt = skill.body`) — so Compare/history read the
+   * rubric that produced the run, never the constant preamble.
+   */
+  async runSkill(workspaceId: string, skillId: string): Promise<EvalRun> {
+    const skill = await this.container.skillsRepo.getById(workspaceId, skillId);
+    if (!skill) throw new NotFoundError('Skill not found');
+
+    const cases = await this.repo.listCasesByOwner(workspaceId, 'skill', skillId);
+    const runGroupId = randomUUID();
+
+    // Empty set → empty aggregate, ZERO LLM calls, no model resolution.
+    if (cases.length === 0) return emptyAggregate();
+
+    // Resolve a constant model via the workspace `conformance` feature model —
+    // workspace-configurable, defaulting to the registry choice (never hardcoded).
+    const fm = await resolveFeatureModel(this.container, workspaceId, 'conformance');
+    const llm = await this.container.llm(fm.provider);
+
+    const ctx: RunContext = {
+      llm,
+      model: fm.model,
+      systemPrompt: BASE_PREAMBLE,
+      skills: [skill.body],
+      strategy: undefined,
+    };
+    return this.runBatch(cases, runGroupId, ctx, {
+      agentVersion: skill.version,
+      systemPrompt: skill.body,
+    });
+  }
+
+  /**
+   * Run a set of cases under one `RunContext`, persist a per-case `eval_runs`
+   * row under a single `run_group_id` carrying the `snapshot` (owner version +
+   * prompt), and return the aggregate. Shared by the agent + skill batch paths
+   * so per-case error handling (AC-16), persistence, and aggregation live once.
+   */
+  private async runBatch(
+    cases: EvalCaseRow[],
+    runGroupId: string,
+    ctx: RunContext,
+    snapshot: { agentVersion: number; systemPrompt: string },
+  ): Promise<EvalRun> {
     const perTrace: EvalPerTrace[] = [];
     let recallSum = 0;
     let precisionSum = 0;
@@ -183,7 +271,7 @@ export class EvalRunner {
     for (const c of cases) {
       // Same per-case execution the ephemeral run uses (AC-16 error handling is
       // inside the helper). The batch adds persistence + aggregation around it.
-      const result = await this.runOneCase(agent, llm, skills, systemPrompt, {
+      const result = await this.runOneCase(ctx, {
         inputDiff: c.inputDiff ?? '',
         inputMeta: c.inputMeta ?? {},
         expectedOutput: c.expectedOutput ?? [],
@@ -194,8 +282,8 @@ export class EvalRunner {
       const insert = this.repo.insertRun({
         caseId: c.id,
         runGroupId,
-        agentVersion,
-        systemPrompt,
+        agentVersion: snapshot.agentVersion,
+        systemPrompt: snapshot.systemPrompt,
         pass: result.pass,
         recall: result.recall,
         precision: result.precision,
@@ -268,7 +356,14 @@ export class EvalRunner {
       .filter((l) => l.skill.enabled)
       .map((l) => `### ${l.skill.name}\n\n${l.skill.body}`);
 
-    return this.runOneCase(agent, llm, skills, agent.system_prompt, {
+    const ctx: RunContext = {
+      llm,
+      model: agent.model,
+      systemPrompt: agent.system_prompt,
+      skills,
+      strategy: agent.strategy,
+    };
+    return this.runOneCase(ctx, {
       inputDiff: input.input_diff,
       inputMeta: input.input_meta ?? {},
       expectedOutput: input.expected_output,
@@ -277,20 +372,52 @@ export class EvalRunner {
   }
 
   /**
-   * Execute ONE case against the agent + return its scored result. Shared by the
-   * batch `run()` (which persists + aggregates around it) and the ephemeral
-   * `runOnce()` (which does neither). HERMETIC: the diff + agent config only —
-   * NO specs / intent / callers / repoMap / prDescription; the (untrusted) diff
-   * reaches the model ONLY through the engine's INJECTION_GUARD wrapping (AC-13).
+   * Run ONE case EPHEMERALLY against a SKILL and return its result — NOTHING is
+   * persisted. Mirrors `runOnce` for a skill: resolves the workspace
+   * `conformance` model + injects the skill body as the sole rubric under the
+   * constant `BASE_PREAMBLE`. Tenancy (AC-15): the skill must belong to the
+   * caller's workspace, else not-found and NO LLM call. A model/config failure
+   * returns an errored result (AC-16), never a bare 500. Never logs `input_diff`.
+   */
+  async runSkillCaseOnce(
+    workspaceId: string,
+    skillId: string,
+    input: { input_diff: string; input_meta?: unknown; expected_output: unknown },
+  ): Promise<RunCaseResult> {
+    const skill = await this.container.skillsRepo.getById(workspaceId, skillId);
+    if (!skill) throw new NotFoundError('Skill not found');
+
+    const fm = await resolveFeatureModel(this.container, workspaceId, 'conformance');
+    const llm = await this.container.llm(fm.provider);
+
+    const ctx: RunContext = {
+      llm,
+      model: fm.model,
+      systemPrompt: BASE_PREAMBLE,
+      skills: [skill.body],
+      strategy: undefined,
+    };
+    return this.runOneCase(ctx, {
+      inputDiff: input.input_diff,
+      inputMeta: input.input_meta ?? {},
+      expectedOutput: input.expected_output,
+      sessionId: `eval:once:${randomUUID()}`,
+    });
+  }
+
+  /**
+   * Execute ONE case under a `RunContext` + return its scored result. Shared by
+   * the batch `run()`/`runSkill()` (which persist + aggregate around it) and the
+   * ephemeral `runOnce()`/`runSkillCaseOnce()` (which do neither). HERMETIC: the
+   * diff + the ctx config only — NO specs / intent / callers / repoMap /
+   * prDescription; the (untrusted) diff reaches the model ONLY through the
+   * engine's INJECTION_GUARD wrapping (AC-13).
    * A per-case model/config failure returns an errored result (`pass: null`,
    * metrics null, `actual_output: { error }`) instead of throwing (AC-16). Never
    * logs the `input_diff` body (A09).
    */
   private async runOneCase(
-    agent: Agent,
-    llm: LLMProvider,
-    skills: string[],
-    systemPrompt: string,
+    ctx: RunContext,
     caseInput: RunCaseInput,
   ): Promise<RunCaseResult> {
     const parsedExpected = ExpectedOutputSchema.parse(caseInput.expectedOutput ?? []);
@@ -299,12 +426,12 @@ export class EvalRunner {
     try {
       const diff = buildDiff(caseInput.inputDiff ?? '', guardFile);
       const outcome = await reviewPullRequest({
-        systemPrompt,
-        model: agent.model,
+        systemPrompt: ctx.systemPrompt,
+        model: ctx.model,
         diff,
-        llm,
-        strategy: agent.strategy,
-        ...(skills.length ? { skills } : {}),
+        llm: ctx.llm,
+        ...(ctx.strategy ? { strategy: ctx.strategy } : {}),
+        ...(ctx.skills.length ? { skills: ctx.skills } : {}),
         sessionId: caseInput.sessionId,
       });
       const durationMs = Date.now() - start;

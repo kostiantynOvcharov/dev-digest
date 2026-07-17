@@ -169,21 +169,31 @@ export class EvalService {
 
   /**
    * Create a case from a full (possibly hand-edited) `EvalCaseInput` payload —
-   * the Save path for a seeded/edited case. Only agent-owned cases are supported;
-   * the owning agent must be in the caller's workspace (AC-15). The name is
-   * deduped against the owner's existing cases.
+   * the Save path for a seeded/edited case. Both agent- and skill-owned cases are
+   * supported; the owner (agent OR skill) must be in the caller's workspace
+   * (AC-15), else not-found and nothing is written. The name is deduped against
+   * the owner's existing cases (scoped by owner_kind + owner_id).
    */
   async createCaseFromInput(workspaceId: string, input: EvalCaseInput): Promise<EvalCase> {
-    if (input.owner_kind !== 'agent') throw new NotFoundError('Agent not found');
-    const agent = await this.container.agents.get(workspaceId, input.owner_id);
-    if (!agent) throw new NotFoundError('Agent not found');
+    // Tenancy: verify the owner is in the caller's workspace before writing.
+    if (input.owner_kind === 'skill') {
+      const skill = await this.container.skillsRepo.getById(workspaceId, input.owner_id);
+      if (!skill) throw new NotFoundError('Skill not found');
+    } else {
+      const agent = await this.container.agents.get(workspaceId, input.owner_id);
+      if (!agent) throw new NotFoundError('Agent not found');
+    }
 
-    const existingNames = await this.repo.listCaseNamesByOwner(workspaceId, 'agent', input.owner_id);
+    const existingNames = await this.repo.listCaseNamesByOwner(
+      workspaceId,
+      input.owner_kind,
+      input.owner_id,
+    );
     const name = dedupeCaseName(input.name, existingNames);
 
     const row = await this.repo.insertCase({
       workspaceId,
-      ownerKind: 'agent',
+      ownerKind: input.owner_kind,
       ownerId: input.owner_id,
       name,
       inputDiff: input.input_diff,
@@ -256,21 +266,56 @@ export class EvalService {
     return new EvalRunner(this.container).runOnce(workspaceId, agentId, input);
   }
 
+  /**
+   * Run every eval case owned by `skillId` and return the aggregate (skill-eval
+   * parity with `runEvals`). The model is resolved via the workspace
+   * `conformance` feature model (held constant while the skill varies); the skill
+   * body is the injected rubric. Tenancy (AC-15) + per-case error handling
+   * (AC-16) live in the runner. Never logs `input_diff` (A09).
+   */
+  async runSkillEvals(workspaceId: string, skillId: string): Promise<EvalRun> {
+    return new EvalRunner(this.container).runSkill(workspaceId, skillId);
+  }
+
+  /**
+   * Run ONE case EPHEMERALLY against `skillId` and return its scored result —
+   * nothing is persisted (the skill-eval twin of `runCaseOnce`). Tenancy (AC-15)
+   * + per-case error handling (AC-16) live in the runner. Never logs `input_diff`.
+   */
+  async runSkillCaseOnce(
+    workspaceId: string,
+    skillId: string,
+    input: { input_diff: string; input_meta?: unknown; expected_output: unknown },
+  ): Promise<RunCaseResult> {
+    return new EvalRunner(this.container).runSkillCaseOnce(workspaceId, skillId, input);
+  }
+
   // ---- Read-only aggregation (dashboard / history / compare — Unit 5) -------
   // Thin delegators to `EvalDashboardService`; the read-heavy aggregation +
   // regression-alert derivation live there so this file stays small.
 
-  /** Run history for an agent, grouped by `run_group_id` (AC-11). Tenancy-checked. */
+  /**
+   * Run history for an owner (agent by default, or a skill via `ownerKind`),
+   * grouped by `run_group_id` (AC-11). Tenancy-checked in the dashboard service.
+   */
   async getRunHistory(
     workspaceId: string,
-    agentId: string,
+    ownerId: string,
+    ownerKind: EvalOwnerKind = 'agent',
   ): Promise<EvalRunGroupSummary[]> {
-    return new EvalDashboardService(this.container).history(workspaceId, agentId);
+    return new EvalDashboardService(this.container).history(workspaceId, ownerId, ownerKind);
   }
 
-  /** Eval dashboard — workspace overview, or one agent's detail via `ownerId` (AC-11/AC-12). */
-  async getDashboard(workspaceId: string, ownerId?: string): Promise<EvalDashboard> {
-    return new EvalDashboardService(this.container).dashboard(workspaceId, ownerId);
+  /**
+   * Eval dashboard — workspace overview, or one owner's detail via `ownerId`
+   * (an agent by default, or a skill via `ownerKind`) (AC-11/AC-12).
+   */
+  async getDashboard(
+    workspaceId: string,
+    ownerId?: string,
+    ownerKind: EvalOwnerKind = 'agent',
+  ): Promise<EvalDashboard> {
+    return new EvalDashboardService(this.container).dashboard(workspaceId, ownerId, ownerKind);
   }
 
   /** Compare two run groups: metric deltas + both stored prompt snapshots (AC-10). */

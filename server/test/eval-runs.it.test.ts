@@ -380,4 +380,170 @@ d('eval runs — hermetic (Testcontainers pg)', () => {
     expect(mock.calls.filter((c) => c.method === 'completeStructured')).toHaveLength(0);
     await app.close();
   });
+
+  // ---- Skill evals (parity with agent evals) --------------------------------
+
+  /**
+   * Pin the workspace `conformance` feature model to the injected mock provider
+   * so a skill run is hermetic regardless of local keys (INSIGHTS 2026-07-11).
+   * The registry default for `conformance` is already `openai`, but the pin is
+   * explicit belt-and-braces so a future default change can't leak a live call.
+   */
+  async function pinConformance(a: Awaited<ReturnType<typeof buildApp>>) {
+    const res = await a.inject({
+      method: 'PUT',
+      url: '/settings',
+      payload: { feature_models: { conformance: { provider: 'openai', model: 'gpt-4.1' } } },
+    });
+    expect(res.statusCode).toBe(200);
+  }
+
+  async function createSkill(
+    a: Awaited<ReturnType<typeof buildApp>>,
+  ): Promise<{ id: string; version: number; body: string }> {
+    const res = await a.inject({
+      method: 'POST',
+      url: '/skills',
+      payload: { name: `rubric-${seq++}`, type: 'custom', body: '# Rule\nNo hardcoded secrets.' },
+    });
+    const j = res.json();
+    return { id: j.id as string, version: j.version as number, body: j.body as string };
+  }
+
+  async function createSkillCase(
+    a: Awaited<ReturnType<typeof buildApp>>,
+    skillId: string,
+    name: string,
+    expected: { file: string; start_line: number; end_line: number }[],
+  ) {
+    const res = await a.inject({
+      method: 'POST',
+      url: '/eval-cases',
+      payload: {
+        owner_kind: 'skill',
+        owner_id: skillId,
+        name,
+        input_diff: PATCH,
+        input_meta: { guard: { file: 'src/config.ts' } },
+        expected_output: expected,
+      },
+    });
+    expect(res.statusCode).toBe(201);
+  }
+
+  it('skill eval: runs a skill\'s cases under the conformance model + snapshots skill version/body', async () => {
+    // Model flags config:11 (kept) + a phantom config:999 (dropped by grounding).
+    const app = await appWith(
+      new MockLLMProvider('openai', { structured: reviewOf([FINDING_11, FINDING_999]) }),
+    );
+    await pinConformance(app);
+    const skill = await createSkill(app);
+    await createSkillCase(app, skill.id, 'Skill must_find', [
+      { file: 'src/config.ts', start_line: 11, end_line: 11 },
+    ]); // must_find, expects config:11
+    await createSkillCase(app, skill.id, 'Skill must_not_flag', []); // must_not_flag guards config:11
+
+    const res = await app.inject({ method: 'POST', url: `/skills/${skill.id}/eval-runs` });
+    expect(res.statusCode).toBe(200);
+    const run = res.json();
+    expect(run.traces_total).toBe(2);
+    expect(run.traces_passed).toBe(1); // must_find passes; must_not_flag fails (overlap = noise)
+
+    // Per-skill rows persist under a single run group carrying the skill's
+    // version + body snapshot (NOT the constant reviewer preamble).
+    const cases = await pg.handle.db
+      .select()
+      .from(t.evalCases)
+      .where(and(eq(t.evalCases.ownerId, skill.id), eq(t.evalCases.ownerKind, 'skill')));
+    const caseIds = new Set(cases.map((c) => c.id));
+    const rows = (await pg.handle.db.select().from(t.evalRuns)).filter((r) => caseIds.has(r.caseId));
+    expect(rows.length).toBe(2);
+    expect(new Set(rows.map((r) => r.runGroupId)).size).toBe(1); // one run group
+    for (const r of rows) {
+      expect(r.agentVersion).toBe(skill.version); // snapshot: skill.version
+      expect(r.systemPrompt).toBe(skill.body); // snapshot: skill.body, not BASE_PREAMBLE
+    }
+
+    // History reads the skill's run group back.
+    const history = (await app.inject({ method: 'GET', url: `/skills/${skill.id}/eval-runs` })).json();
+    expect(history).toHaveLength(1);
+    expect(history[0].traces_total).toBe(2);
+
+    await app.close();
+  });
+
+  it('skill eval: empty set → empty aggregate, ZERO LLM calls', async () => {
+    const mock = new MockLLMProvider('openai', { structured: reviewOf([]) });
+    const app = await appWith(mock);
+    await pinConformance(app);
+    const skill = await createSkill(app); // no cases
+
+    const res = await app.inject({ method: 'POST', url: `/skills/${skill.id}/eval-runs` });
+    expect(res.statusCode).toBe(200);
+    const run = res.json();
+    expect(run.traces_total).toBe(0);
+    expect(run.per_trace).toEqual([]);
+    expect(mock.calls.filter((c) => c.method === 'completeStructured')).toHaveLength(0);
+
+    await app.close();
+  });
+
+  it('skill eval: skill outside the workspace → 404, no LLM call', async () => {
+    const mock = new MockLLMProvider('openai', { structured: reviewOf([]) });
+    const app = await appWith(mock);
+    const res = await app.inject({ method: 'POST', url: `/skills/${crypto.randomUUID()}/eval-runs` });
+    expect(res.statusCode).toBe(404);
+    expect(mock.calls.filter((c) => c.method === 'completeStructured')).toHaveLength(0);
+    await app.close();
+  });
+
+  it('skill eval-run-case: runs ONE case ephemerally and persists NOTHING', async () => {
+    const app = await appWith(
+      new MockLLMProvider('openai', { structured: reviewOf([FINDING_11, FINDING_999]) }),
+    );
+    await pinConformance(app);
+    const skill = await createSkill(app);
+
+    const runsBefore = await pg.handle.db.select().from(t.evalRuns);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/skills/${skill.id}/eval-run-case`,
+      payload: {
+        input_diff: PATCH,
+        input_meta: { guard: { file: 'src/config.ts' } },
+        expected_output: [{ file: 'src/config.ts', start_line: 11, end_line: 11 }],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const result = res.json();
+    expect(result.pass).toBe(true); // the rubric-run flagged the expected location
+    expect(result.actual_output).toEqual([
+      expect.objectContaining({ file: 'src/config.ts', start_line: 11 }), // phantom dropped
+    ]);
+
+    // NOTHING persisted — no eval_runs row, no eval_cases row for the skill.
+    const runsAfter = await pg.handle.db.select().from(t.evalRuns);
+    expect(runsAfter.length).toBe(runsBefore.length);
+    const cases = await pg.handle.db
+      .select()
+      .from(t.evalCases)
+      .where(eq(t.evalCases.ownerId, skill.id));
+    expect(cases.length).toBe(0);
+
+    await app.close();
+  });
+
+  it('skill eval-run-case: skill outside the workspace → 404, no LLM call', async () => {
+    const mock = new MockLLMProvider('openai', { structured: reviewOf([]) });
+    const app = await appWith(mock);
+    const res = await app.inject({
+      method: 'POST',
+      url: `/skills/${crypto.randomUUID()}/eval-run-case`,
+      payload: { input_diff: '', expected_output: [] },
+    });
+    expect(res.statusCode).toBe(404);
+    expect(mock.calls.filter((c) => c.method === 'completeStructured')).toHaveLength(0);
+    await app.close();
+  });
 });

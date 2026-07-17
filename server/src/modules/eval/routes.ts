@@ -18,7 +18,10 @@ import { EvalService } from './service.js';
  *   POST   /agents/:id/eval-runs                       → run all of an agent's cases (hermetic)
  *   POST   /agents/:id/eval-run-case  EvalRunCaseInput → run ONE case ephemerally (NO persist)
  *   GET    /agents/:id/eval-runs                       → run history grouped by run_group_id
- *   GET    /eval-dashboard?owner_id                    → dashboard (workspace / per-agent)
+ *   POST   /skills/:id/eval-runs                       → run all of a skill's cases (conformance model)
+ *   POST   /skills/:id/eval-run-case  EvalRunCaseInput → run ONE skill case ephemerally (NO persist)
+ *   GET    /skills/:id/eval-runs                       → skill run history grouped by run_group_id
+ *   GET    /eval-dashboard?owner_id&owner_kind         → dashboard (workspace / per-agent / per-skill)
  *   GET    /eval-runs/compare?a&b                      → two run groups: deltas + prompts
  *
  * Full onion module (routes → service → repository). Every handler resolves
@@ -64,8 +67,15 @@ const ListCasesQuery = z.object({
   owner_id: z.string().uuid(),
 });
 
-/** Query for the dashboard: optional per-agent detail via `owner_id`. */
-const DashboardQuery = z.object({ owner_id: z.string().uuid().optional() });
+/**
+ * Query for the dashboard: optional per-owner detail via `owner_id`, plus an
+ * optional `owner_kind` (default 'agent' in the service) so the client can
+ * request a SKILL owner's detail (`owner_kind=skill`).
+ */
+const DashboardQuery = z.object({
+  owner_id: z.string().uuid().optional(),
+  owner_kind: EvalOwnerKind.optional(),
+});
 
 /** Query for comparing two run groups (each a `run_group_id`). */
 const CompareQuery = z.object({ a: z.string().uuid(), b: z.string().uuid() });
@@ -152,10 +162,41 @@ export default async function evalRoutes(appBase: FastifyInstance) {
     return service.getRunHistory(workspaceId, req.params.id);
   });
 
-  // ---- Eval dashboard: workspace overview, or per-agent detail (AC-11/AC-12) -
+  // ---- Run all of a SKILL's cases (skill-eval parity — AC-2/AC-5/AC-6/AC-16) -
+  // The skill is run under the workspace `conformance` model with the skill body
+  // as the injected rubric. Tenancy (AC-15) is enforced in the service (a skill
+  // outside the workspace → 404 before any LLM call); a per-case model/config
+  // failure is recorded errored and the run continues (AC-16) — never a 500.
+  app.post('/skills/:id/eval-runs', { schema: { params: IdParams } }, async (req) => {
+    const { workspaceId } = await getContext(app.container, req);
+    return service.runSkillEvals(workspaceId, req.params.id);
+  });
+
+  // ---- Run ONE case ephemerally against a SKILL — persists NOTHING ----------
+  // The skill-eval twin of `/agents/:id/eval-run-case`: hermetic single execution
+  // under the conformance model, no eval_runs row. A model/config failure returns
+  // an errored result (200), never a bare 500. Tenancy enforced in the service.
+  app.post(
+    '/skills/:id/eval-run-case',
+    { schema: { params: IdParams, body: EvalRunCaseInput } },
+    async (req) => {
+      const { workspaceId } = await getContext(app.container, req);
+      return service.runSkillCaseOnce(workspaceId, req.params.id, req.body);
+    },
+  );
+
+  // ---- Run history for a SKILL, grouped by run_group_id (AC-11, AC-15) -------
+  app.get('/skills/:id/eval-runs', { schema: { params: IdParams } }, async (req) => {
+    const { workspaceId } = await getContext(app.container, req);
+    return service.getRunHistory(workspaceId, req.params.id, 'skill');
+  });
+
+  // ---- Eval dashboard: workspace overview, or per-owner detail (AC-11/AC-12) -
+  // `owner_kind` (default 'agent') selects the detail owner kind so a SKILL
+  // owner's detail resolves via `?owner_id=<skillId>&owner_kind=skill`.
   app.get('/eval-dashboard', { schema: { querystring: DashboardQuery } }, async (req) => {
     const { workspaceId } = await getContext(app.container, req);
-    return service.getDashboard(workspaceId, req.query.owner_id);
+    return service.getDashboard(workspaceId, req.query.owner_id, req.query.owner_kind);
   });
 
   // ---- Compare two run groups: deltas + stored prompt snapshots (AC-10) -----
